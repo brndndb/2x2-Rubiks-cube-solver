@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2x2 Rubik's Cube Solver</title>
+  <style>
+    /* B1: Page layout */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* L3: --cell drives all cube sizing; shrunk in media queries below */
+    :root {
+      --cell: 52px;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      padding: 32px 16px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      color: #ffffff;
+      text-align: center;
+    }
+
+    /* B2: Cube net layout */
+    #cube-net {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .face-row {
+      display: flex;
+      flex-direction: row;
+      gap: 6px;
+    }
+
+    /* U/D indent = one face-wrap width + row-gap
+       face-wrap width = 2*cell + cell-gap(3px) + face-padding(8px) + border(2px) = 2*cell + 13px
+       + row-gap(6px) = 2*cell + 19px */
+    #row-top,
+    #row-bottom {
+      padding-left: calc(2 * var(--cell) + 19px);
+    }
+
+    .face-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .face-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #8888aa;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .face {
+      display: grid;
+      grid-template-columns: repeat(2, var(--cell));
+      grid-template-rows: repeat(2, var(--cell));
+      gap: 3px;
+      padding: 4px;
+      background: #12122a;
+      border-radius: 6px;
+      border: 1px solid #33335a;
+    }
+
+    .facelet {
+      width: var(--cell);
+      height: var(--cell);
+      background: #2e2e4a;
+      border: 2px solid #555580;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+
+    .facelet:hover {
+      border-color: #aaaacc;
+      transform: scale(1.06);
+    }
+
+    .facelet:focus {
+      outline: 2px solid #4a90e2;
+      outline-offset: 2px;
+    }
+
+    /* B3: Color palette */
+    #controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #palette {
+      display: flex;
+      gap: 10px;
+    }
+
+    .color-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+
+    .color-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .color-btn.active {
+      border-color: #ffffff;
+      transform: scale(1.15);
+    }
+
+    /* Cube face colors */
+    .color-btn[data-color="0"] { background: #ffffff; } /* White  - U */
+    .color-btn[data-color="1"] { background: #c41e3a; } /* Red    - R */
+    .color-btn[data-color="2"] { background: #009b48; } /* Green  - F */
+    .color-btn[data-color="3"] { background: #ffd500; } /* Yellow - D */
+    .color-btn[data-color="4"] { background: #ff5800; } /* Orange - L */
+    .color-btn[data-color="5"] { background: #0051a2; } /* Blue   - B */
+
+    #color-counts {
+      display: flex;
+      gap: 8px;
+    }
+
+    #key-hint {
+      font-size: 0.72rem;
+      color: #666699;
+      letter-spacing: 0.05em;
+    }
+
+    .count-badge {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #2e2e4a;
+      color: #e0e0e0;
+    }
+
+    .count-badge.complete {
+      background: #1a5c2a;
+      color: #90ee90;
+    }
+
+    #solve-btn {
+      padding: 10px 36px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      background: #4a90e2;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    #solve-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #solve-btn:not(:disabled):hover {
+      background: #357abd;
+    }
+
+    #reset-btn {
+      padding: 10px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      background: #3a2a2a;
+      color: #cc8888;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #reset-btn:hover {
+      background: #5a2a2a;
+    }
+
+    #btn-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #status-msg {
+      min-height: 1.2em;
+      font-size: 0.9rem;
+      color: #ff8080;
+    }
+
+    /* B4: Solution section */
+    #solution-section {
+      width: 100%;
+      max-width: 760px;
+      background: #16213e;
+      border: 1px solid #2e2e5a;
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* override browser [hidden] so our flex layout applies when visible */
+    #solution-section:not([hidden]) {
+      display: flex;
+    }
+
+    #solution-header {
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #90caf9;
+    }
+
+    #move-list {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0;
+    }
+
+    #move-list li {
+      background: #2e2e4a;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: grid;
+      grid-template-areas:
+        "num   num"
+        "net   arrow"
+        "net   desc";
+      grid-template-columns: auto auto;
+      gap: 2px 8px;
+      align-items: center;
+      cursor: default;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    #move-list .step-num {
+      grid-area: num;
+      font-size: 0.6rem;
+      color: #8888aa;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .mini-net   { grid-area: net;   align-self: center; }
+    .move-arrow { grid-area: arrow; }
+
+    #move-list .move-desc {
+      grid-area: desc;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #e0e0e0;
+      line-height: 1.3;
+    }
+
+    #move-list li.current-step {
+      background: #1a4a7a;
+      border-color: #4a90e2;
+    }
+
+    #move-list li.current-step .move-desc { color: #ffffff; }
+    #move-list li.current-step .step-num  { color: #90caf9; }
+
+    #solution-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #solution-nav button {
+      padding: 6px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      background: #2e2e4a;
+      color: #e0e0e0;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    #solution-nav button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    #solution-nav button:not(:disabled):hover {
+      background: #4a4a6a;
+    }
+
+    #step-indicator {
+      font-size: 0.85rem;
+      color: #aaaacc;
+    }
+
+    /* L2: Instructions box */
+    #instructions {
+      max-width: 460px;
+      background: #16213e;
+      border: 1px solid #2e2e5a;
+      border-radius: 10px;
+      padding: 14px 20px;
+      font-size: 0.85rem;
+      color: #aaaacc;
+      line-height: 1.6;
+    }
+
+    #instructions strong {
+      color: #90caf9;
+    }
+
+    #instructions ol {
+      margin: 6px 0 0 18px;
+    }
+
+    /* L3: Responsive breakpoints — shrink --cell so cube fits on small screens.
+       Middle row width = 4*(2*cell + 13px) + 3*6px = 8*cell + 70px
+       Available width  = screen - 32px body padding
+       Breakpoints chosen so the cube never overflows its container. */
+
+    /* ≤560px: 44px cells → middle row ≈ 422px, fits on 454px+ screens */
+    @media (max-width: 560px) {
+      :root { --cell: 44px; }
+      body  { gap: 18px; padding-top: 20px; }
+    }
+
+    /* ≤450px: 36px cells → middle row ≈ 358px, fits on 390px+ screens */
+    @media (max-width: 450px) {
+      :root { --cell: 36px; }
+      #color-counts { flex-wrap: wrap; justify-content: center; }
+    }
+
+    /* ≤380px: 30px cells → middle row ≈ 310px, fits on 342px+ screens */
+    @media (max-width: 380px) {
+      :root { --cell: 30px; }
+      h1    { font-size: 1.3rem; }
+      #instructions { font-size: 0.78rem; }
+      .color-btn { width: 32px; height: 32px; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>2x2 Rubik's Cube Solver</h1>
+
+  <div id="instructions">
+    <strong>Before you start:</strong> find the corner that has
+    <strong>yellow + blue + orange</strong> stickers — that is your
+    <strong>Down-Back-Left (DBL)</strong> reference corner.
+    <ol>
+      <li>Rotate the <em>whole cube</em> until that corner sits at the bottom-back-left, with yellow facing down, blue facing back, and orange facing left. Do not move it again.</li>
+      <li>Tab between facelets and press <strong>W R G Y O B</strong> to paint — or click a facelet after selecting a palette color.</li>
+      <li>Fill all 24 stickers (4 per color), then press <strong>Solve</strong>.</li>
+      <li>Use <strong>Next / Prev</strong> to step through the solution one move at a time. Keep the cube in the same orientation throughout.</li>
+    </ol>
+  </div>
+
+  <!-- Cube net: cross layout U / L F R B / D -->
+  <!-- Facelet indices match the 24-element string: U(0-3) R(4-7) F(8-11) D(12-15) L(16-19) B(20-23) -->
+  <div id="cube-net">
+
+    <!-- U face (top) -->
+    <div class="face-row" id="row-top">
+      <div class="face-wrap">
+        <div class="face-label">U</div>
+        <div class="face" id="face-U">
+          <div class="facelet" data-index="0"></div>
+          <div class="facelet" data-index="1"></div>
+          <div class="facelet" data-index="2"></div>
+          <div class="facelet" data-index="3"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle row: L F R B -->
+    <div class="face-row" id="row-middle">
+      <div class="face-wrap">
+        <div class="face-label">L</div>
+        <div class="face" id="face-L">
+          <div class="facelet" data-index="16"></div>
+          <div class="facelet" data-index="17"></div>
+          <div class="facelet" data-index="18"></div>
+          <div class="facelet" data-index="19"></div>
+        </div>
+      </div>
+      <div class="face-wrap">
+        <div class="face-label">F</div>
+        <div class="face" id="face-F">
+          <div class="facelet" data-index="8"></div>
+          <div class="facelet" data-index="9"></div>
+          <div class="facelet" data-index="10"></div>
+          <div class="facelet" data-index="11"></div>
+        </div>
+      </div>
+      <div class="face-wrap">
+        <div class="face-label">R</div>
+        <div class="face" id="face-R">
+          <div class="facelet" data-index="4"></div>
+          <div class="facelet" data-index="5"></div>
+          <div class="facelet" data-index="6"></div>
+          <div class="facelet" data-index="7"></div>
+        </div>
+      </div>
+      <div class="face-wrap">
+        <div class="face-label">B</div>
+        <div class="face" id="face-B">
+          <div class="facelet" data-index="20"></div>
+          <div class="facelet" data-index="21"></div>
+          <div class="facelet" data-index="22"></div>
+          <div class="facelet" data-index="23"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- D face (bottom) -->
+    <div class="face-row" id="row-bottom">
+      <div class="face-wrap">
+        <div class="face-label">D</div>
+        <div class="face" id="face-D">
+          <div class="facelet" data-index="12"></div>
+          <div class="facelet" data-index="13"></div>
+          <div class="facelet" data-index="14"></div>
+          <div class="facelet" data-index="15"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- A3: Color palette, solve button, status message -->
+  <div id="controls">
+
+    <div id="palette">
+      <!-- data-color matches color index: U=0 white, R=1 red, F=2 green, D=3 yellow, L=4 orange, B=5 blue -->
+      <button class="color-btn active" data-color="0" title="White (U)"></button>
+      <button class="color-btn" data-color="1" title="Red (R)"></button>
+      <button class="color-btn" data-color="2" title="Green (F)"></button>
+      <button class="color-btn" data-color="3" title="Yellow (D)"></button>
+      <button class="color-btn" data-color="4" title="Orange (L)"></button>
+      <button class="color-btn" data-color="5" title="Blue (B)"></button>
+    </div>
+    <div id="key-hint">Keys: W &nbsp;R &nbsp;G &nbsp;Y &nbsp;O &nbsp;B</div>
+
+    <div id="color-counts">
+      <!-- color count badges, one per color; updated by JS -->
+      <span class="count-badge" data-color="0">W: 0/4</span>
+      <span class="count-badge" data-color="1">R: 0/4</span>
+      <span class="count-badge" data-color="2">G: 0/4</span>
+      <span class="count-badge" data-color="3">Y: 0/4</span>
+      <span class="count-badge" data-color="4">O: 0/4</span>
+      <span class="count-badge" data-color="5">B: 0/4</span>
+    </div>
+
+    <div id="btn-row">
+      <button id="reset-btn">Reset</button>
+      <button id="solve-btn" disabled>Solve</button>
+    </div>
+
+    <div id="status-msg"></div>
+
+  </div>
+
+  <!-- A4: Solution display (hidden until solve runs) -->
+  <div id="solution-section" hidden>
+
+    <div id="solution-header">
+      <span id="move-count"></span>
+    </div>
+
+    <ol id="move-list"></ol>
+
+    <div id="solution-nav">
+      <button id="btn-prev" disabled>&#8592; Prev</button>
+      <span id="step-indicator"></span>
+      <button id="btn-next">Next &#8594;</button>
+    </div>
+
+  </div>
+
+  <!-- Worker script: runs heavy table-building off the main thread -->
+  <script id="solver-worker" type="javascript/worker">
+    const URF = 0, UFL = 1, ULB = 2, UBR = 3;
+    const DRB = 4, DFR = 5, DLF = 6, DBL = 7;
+
+    const cpU = [UBR, URF, UFL, ULB, DRB, DFR, DLF, DBL];
+    const coU = [  0,   0,   0,   0,   0,   0,   0,   0];
+    const cpR = [DFR, UFL, ULB, URF, UBR, DRB, DLF, DBL];
+    const coR = [  2,   0,   0,   1,   2,   1,   0,   0];
+    const cpF = [UFL, DLF, ULB, UBR, DRB, URF, DFR, DBL];
+    const coF = [  1,   2,   0,   0,   0,   2,   1,   0];
+
+    const ID_CP = [0, 1, 2, 3, 4, 5, 6, 7];
+    const ID_CO = [0, 0, 0, 0, 0, 0, 0, 0];
+    const FACT   = [1, 1, 2, 6, 24, 120, 720, 5040];
+
+    function applyMove(cpA, coA, cpM, coM) {
+      const cpOut = new Array(8), coOut = new Array(8);
+      for (let i = 0; i < 8; i++) {
+        cpOut[i] = cpA[cpM[i]];
+        coOut[i] = (coA[cpM[i]] + coM[i]) % 3;
+      }
+      return { cp: cpOut, co: coOut };
+    }
+
+    function buildMoves() {
+      const moves = [];
+      for (const [cpBase, coBase] of [[cpU, coU], [cpR, coR], [cpF, coF]]) {
+        let cur = { cp: ID_CP.slice(), co: ID_CO.slice() };
+        for (let pow = 0; pow < 3; pow++) {
+          cur = applyMove(cur.cp, cur.co, cpBase, coBase);
+          moves.push({ cp: cur.cp.slice(), co: cur.co.slice() });
+        }
+      }
+      return moves;
+    }
+
+    function encodeTwist(co) {
+      let twist = 0;
+      for (let i = 0; i < 6; i++) twist = twist * 3 + co[i];
+      return twist;
+    }
+
+    function decodeTwist(twist, co) {
+      let t = twist, sum = 0;
+      for (let i = 5; i >= 0; i--) { co[i] = t % 3; sum += co[i]; t = Math.floor(t / 3); }
+      co[6] = (3 - (sum % 3)) % 3;
+      co[7] = 0;
+    }
+
+    function encodePerm(cp) {
+      let perm = 0;
+      for (let i = 0; i < 7; i++) {
+        let k = 0;
+        for (let j = i + 1; j < 7; j++) { if (cp[j] < cp[i]) k++; }
+        perm += k * FACT[6 - i];
+      }
+      return perm;
+    }
+
+    function decodePerm(perm, cp) {
+      const used = new Array(8).fill(false);
+      let p = perm;
+      for (let i = 0; i < 7; i++) {
+        const fact = FACT[6 - i], k = Math.floor(p / fact);
+        p = p % fact;
+        let count = 0;
+        for (let c = 0; c < 8; c++) {
+          if (!used[c]) { if (count === k) { cp[i] = c; used[c] = true; break; } count++; }
+        }
+      }
+      cp[7] = used.indexOf(false);
+    }
+
+    function buildTwistMove(MOVES) {
+      const table = new Uint16Array(729 * 9);
+      const co = new Array(8), cp = [0, 1, 2, 3, 4, 5, 6, 7];
+      for (let twist = 0; twist < 729; twist++) {
+        decodeTwist(twist, co);
+        for (let m = 0; m < 9; m++)
+          table[twist * 9 + m] = encodeTwist(applyMove(cp, co, MOVES[m].cp, MOVES[m].co).co);
+      }
+      return table;
+    }
+
+    function buildPermMove(MOVES) {
+      const table = new Uint16Array(5040 * 9);
+      const cp = new Array(8), co = [0, 0, 0, 0, 0, 0, 0, 0];
+      for (let perm = 0; perm < 5040; perm++) {
+        decodePerm(perm, cp);
+        for (let m = 0; m < 9; m++)
+          table[perm * 9 + m] = encodePerm(applyMove(cp, co, MOVES[m].cp, MOVES[m].co).cp);
+      }
+      return table;
+    }
+
+    function buildPruningTable(twistMove, permMove) {
+      const table = new Uint8Array(5040 * 729).fill(255);
+      table[0] = 0;
+      let depth = 0, filled = 1;
+      const total = 5040 * 729;
+      while (filled < total) {
+        for (let perm = 0; perm < 5040; perm++) {
+          for (let twist = 0; twist < 729; twist++) {
+            if (table[perm * 729 + twist] !== depth) continue;
+            for (let m = 0; m < 9; m++) {
+              const idx = permMove[perm * 9 + m] * 729 + twistMove[twist * 9 + m];
+              if (table[idx] === 255) { table[idx] = depth + 1; filled++; }
+            }
+          }
+        }
+        depth++;
+        // Report progress after each BFS level (pruning table = 5%–100% of total)
+        self.postMessage({ type: 'progress', pct: Math.round(5 + (filled / total) * 95) });
+      }
+      return table;
+    }
+
+    self.onmessage = function () {
+      const MOVES        = buildMoves();
+      const twistMove    = buildTwistMove(MOVES);
+      self.postMessage({ type: 'progress', pct: 2 });
+      const permMove     = buildPermMove(MOVES);
+      self.postMessage({ type: 'progress', pct: 5 });
+      const pruningTable = buildPruningTable(twistMove, permMove);
+      self.postMessage(
+        { type: 'done', twistMove, permMove, pruningTable },
+        [twistMove.buffer, permMove.buffer, pruningTable.buffer]
+      );
+    };
+  </script>
+
+  <script>
+    // -------------------------------------------------------------------------
+    // C1: Constants
+    // -------------------------------------------------------------------------
+
+    // Corner indices (position 0–7)
+    const URF = 0, UFL = 1, ULB = 2, UBR = 3;
+    const DRB = 4, DFR = 5, DLF = 6, DBL = 7;
+
+    // Color indices
+    const U = 0, R = 1, F = 2, D = 3, L = 4, B = 5;
+
+    // CSS colors for each color index — used by painting logic
+    const COLOR_CSS = ['#ffffff', '#c41e3a', '#009b48', '#ffd500', '#ff5800', '#0051a2'];
+
+    // Color label letters for the count badges
+    const COLOR_LABEL = ['W', 'R', 'G', 'Y', 'O', 'B'];
+
+    // Facelet index layout per corner position.
+    // Each entry is [facelet_a, facelet_b, facelet_c] corresponding to the
+    // three sticker positions of that corner, in order matching the co twist axes.
+    // Derived from the plan's facelet numbering (0-indexed):
+    //   U:0-3  R:4-7  F:8-11  D:12-15  L:16-19  B:20-23
+    // Corner → facelets (from defs / cubie.py):
+    //   URF: U4=3, R1=4, F2=9
+    //   UFL: U3=2, F1=8, L2=17
+    //   ULB: U1=0, L1=16, B2=21
+    //   UBR: U2=1, B1=20, R2=5
+    //   DRB: D4=15, R4=7, B3=22
+    //   DFR: D2=13, F4=11, R3=6
+    //   DLF: D1=12, L4=19, F3=10
+    //   DBL: D3=14, B4=23, L3=18
+    const CORNER_FACELETS = [
+      [ 3,  4,  9],  // URF: U4 R1 F2
+      [ 2,  8, 17],  // UFL: U3 F1 L2
+      [ 0, 16, 21],  // ULB: U1 L1 B2
+      [ 1, 20,  5],  // UBR: U2 B1 R2
+      [15,  7, 22],  // DRB: D4 R4 B3
+      [13, 11,  6],  // DFR: D2 F4 R3
+      [12, 19, 10],  // DLF: D1 L4 F3
+      [14, 23, 18],  // DBL: D3 B4 L3
+    ];
+
+    // Which color index belongs at each facelet of each corner when solved.
+    // Order matches CORNER_FACELETS: first facelet is U/D face, second and third
+    // are the two side faces, following the same axis order used in co twist.
+    const CORNER_COLORS = [
+      [U, R, F],  // URF
+      [U, F, L],  // UFL
+      [U, L, B],  // ULB
+      [U, B, R],  // UBR
+      [D, R, B],  // DRB
+      [D, F, R],  // DFR
+      [D, L, F],  // DLF
+      [D, B, L],  // DBL
+    ];
+
+    // -------------------------------------------------------------------------
+    // C2: Base move definitions (from cubie.py)
+    // Each move is defined as cp (corner permutation) and co (corner orientation)
+    // describing where each corner goes and how its orientation changes.
+    // -------------------------------------------------------------------------
+
+    // U move: cycles URF→UBR→ULB→UFL, no orientation change
+    const cpU = [UBR, URF, UFL, ULB, DRB, DFR, DLF, DBL];
+    const coU = [  0,   0,   0,   0,   0,   0,   0,   0];
+
+    // R move: cycles URF→DFR→DRB→UBR, orientation flips on affected corners
+    const cpR = [DFR, UFL, ULB, URF, UBR, DRB, DLF, DBL];
+    const coR = [  2,   0,   0,   1,   2,   1,   0,   0];
+
+    // F move: cycles URF→UFL→DLF→DFR, orientation flips on affected corners
+    const cpF = [UFL, DLF, ULB, UBR, DRB, URF, DFR, DBL];
+    const coF = [  1,   2,   0,   0,   0,   2,   1,   0];
+
+    // -------------------------------------------------------------------------
+    // D1: applyMove — multiply two CubieCubes (port of CubieCube.multiply in cubie.py)
+    // Returns a new {cp, co} representing the cube state after applying move M
+    // to state A.  Formula: result[i] = A[ M[i] ] for cp; co adds mod 3.
+    // -------------------------------------------------------------------------
+    function applyMove(cpA, coA, cpM, coM) {
+      const cpOut = new Array(8);
+      const coOut = new Array(8);
+      for (let i = 0; i < 8; i++) {
+        cpOut[i] = cpA[cpM[i]];
+        coOut[i] = (coA[cpM[i]] + coM[i]) % 3;
+      }
+      return { cp: cpOut, co: coOut };
+    }
+
+    // -------------------------------------------------------------------------
+    // D2: All 9 moves — U, U2, U', R, R2, R', F, F2, F'
+    // Generated by composing each base move 1×, 2×, 3× with applyMove.
+    // MOVES[i] = {cp, co} for move index i (matches solver move order).
+    // -------------------------------------------------------------------------
+    const MOVE_DESCS = [
+      "Top Clockwise 90°", "Top 180°", "Top Counter-clockwise 90°",
+      "Right Clockwise 90°", "Right 180°", "Right Counter-clockwise 90°",
+      "Front Clockwise 90°", "Front 180°", "Front Counter-clockwise 90°",
+    ];
+
+    // Solved state as starting point for composition
+    const ID_CP = [0, 1, 2, 3, 4, 5, 6, 7];
+    const ID_CO = [0, 0, 0, 0, 0, 0, 0, 0];
+
+    function buildMoves() {
+      const moves = [];
+      for (const [cpBase, coBase] of [[cpU, coU], [cpR, coR], [cpF, coF]]) {
+        let cur = { cp: ID_CP.slice(), co: ID_CO.slice() };
+        for (let pow = 0; pow < 3; pow++) {          // 1×, 2×, 3×
+          cur = applyMove(cur.cp, cur.co, cpBase, coBase);
+          moves.push({ cp: cur.cp.slice(), co: cur.co.slice() });
+        }
+      }
+      return moves;  // length 9: U U2 U' R R2 R' F F2 F'
+    }
+
+    const MOVES = buildMoves();
+
+    // -------------------------------------------------------------------------
+    // D3: faceletsToCubie — convert painted 24-element facelets array to {cp, co}
+    // For each corner position, identify which cubie is sitting there by matching
+    // its three sticker colors to CORNER_COLORS, then compute its orientation.
+    // -------------------------------------------------------------------------
+    function faceletsToCubie(facelets) {
+      const cp = new Array(8);
+      const co = new Array(8);
+
+      for (let pos = 0; pos < 8; pos++) {
+        // Read the three sticker colors at this corner position
+        const stickers = CORNER_FACELETS[pos].map(fi => facelets[fi]);
+
+        // Find which cubie belongs here by matching the set of colors
+        let cubie = -1;
+        for (let c = 0; c < 8; c++) {
+          if (CORNER_COLORS[c].every(col => stickers.includes(col))) {
+            cubie = c;
+            break;
+          }
+        }
+        cp[pos] = cubie;
+
+        // Determine orientation: which rotation brings the U/D sticker to the
+        // U/D facelet of this position (index 0 in CORNER_FACELETS[pos]).
+        // The U/D color of the cubie is CORNER_COLORS[cubie][0].
+        const udColor = CORNER_COLORS[cubie][0];
+        co[pos] = stickers.indexOf(udColor); // 0, 1, or 2
+      }
+
+      return { cp, co };
+    }
+
+    // -------------------------------------------------------------------------
+    // E1: Twist coordinate — encode/decode orientation of 7 free corners (DBL fixed)
+    // Treats co[0..6] as a base-3 number → range 0..728 (3^6 = 729 states).
+    // co[7] is always derivable (sum of all 8 must be divisible by 3).
+    // -------------------------------------------------------------------------
+    function encodeTwist(co) {
+      let twist = 0;
+      for (let i = 0; i < 6; i++) {
+        twist = twist * 3 + co[i];
+      }
+      return twist;  // 0..728
+    }
+
+    function decodeTwist(twist, co) {
+      let t = twist;
+      let sum = 0;
+      for (let i = 5; i >= 0; i--) {
+        co[i] = t % 3;
+        sum += co[i];
+        t = Math.floor(t / 3);
+      }
+      // co[6] is determined by the sum constraint; co[7] (DBL) is always 0
+      co[6] = (3 - (sum % 3)) % 3;
+      co[7] = 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // E2: Perm coordinate — encode/decode permutation of 7 free corners (DBL fixed)
+    // Uses the Lehmer code (factorial number system) over cp[0..6] → 0..5039 (7!).
+    // cp[7] is always DBL=7 when the other 7 are placed, so it is ignored.
+    // -------------------------------------------------------------------------
+
+    // Factorials for Lehmer encoding
+    const FACT = [1, 1, 2, 6, 24, 120, 720, 5040];
+
+    function encodePerm(cp) {
+      let perm = 0;
+      for (let i = 0; i < 7; i++) {
+        // Count how many values cp[i+1..6] are less than cp[i]
+        let k = 0;
+        for (let j = i + 1; j < 7; j++) {
+          if (cp[j] < cp[i]) k++;
+        }
+        perm += k * FACT[6 - i];
+      }
+      return perm;  // 0..5039
+    }
+
+    function decodePerm(perm, cp) {
+      const used = new Array(8).fill(false);
+      let p = perm;
+      for (let i = 0; i < 7; i++) {
+        const fact = FACT[6 - i];
+        const k = Math.floor(p / fact);
+        p = p % fact;
+        // Pick the (k+1)-th unused cubie
+        let count = 0;
+        for (let c = 0; c < 8; c++) {
+          if (!used[c]) {
+            if (count === k) { cp[i] = c; used[c] = true; break; }
+            count++;
+          }
+        }
+      }
+      // Last free corner fills cp[7]
+      cp[7] = used.indexOf(false);
+    }
+
+    // -------------------------------------------------------------------------
+    // F1: buildTwistMove — precompute new twist coordinate for every (twist, move)
+    // twistMove[twist * 9 + move] = resulting twist after applying move to a
+    // cube with that twist coordinate (perm irrelevant for this table).
+    // Size: 729 × 9 = 6561 entries, stored as Uint16Array.
+    // -------------------------------------------------------------------------
+    function buildTwistMove() {
+      const table = new Uint16Array(729 * 9);
+      const co = new Array(8);
+      const cp = [0, 1, 2, 3, 4, 5, 6, 7];  // perm doesn't matter here
+
+      for (let twist = 0; twist < 729; twist++) {
+        decodeTwist(twist, co);
+        for (let m = 0; m < 9; m++) {
+          const res = applyMove(cp, co, MOVES[m].cp, MOVES[m].co);
+          table[twist * 9 + m] = encodeTwist(res.co);
+        }
+      }
+      return table;
+    }
+
+    // -------------------------------------------------------------------------
+    // F2: buildPermMove — precompute new perm coordinate for every (perm, move)
+    // permMove[perm * 9 + move] = resulting perm after applying move to a cube
+    // with that perm coordinate (twist irrelevant for this table).
+    // Size: 5040 × 9 = 45360 entries, stored as Uint16Array.
+    // -------------------------------------------------------------------------
+    function buildPermMove() {
+      const table = new Uint16Array(5040 * 9);
+      const cp = new Array(8);
+      const co = [0, 0, 0, 0, 0, 0, 0, 0];  // twist doesn't matter here
+
+      for (let perm = 0; perm < 5040; perm++) {
+        decodePerm(perm, cp);
+        for (let m = 0; m < 9; m++) {
+          const res = applyMove(cp, co, MOVES[m].cp, MOVES[m].co);
+          table[perm * 9 + m] = encodePerm(res.cp);
+        }
+      }
+      return table;
+    }
+
+    // -------------------------------------------------------------------------
+    // G1: buildPruningTable — BFS from solved state over all (perm, twist) pairs
+    // cornerDepth[perm * 729 + twist] = minimum moves to solve that state.
+    // Initialised to 255 (unvisited); solved state (0,0) = 0.
+    // Size: 5040 × 729 = 3,674,160 entries as Uint8Array (~3.7 MB).
+    // Requires twistMove and permMove to already be built.
+    // -------------------------------------------------------------------------
+    function buildPruningTable(twistMove, permMove) {
+      const table = new Uint8Array(5040 * 729).fill(255);
+      table[0] = 0;  // solved state: perm=0, twist=0, depth=0
+
+      let depth = 0;
+      let filled = 1;
+      const total = 5040 * 729;
+
+      while (filled < total) {
+        for (let perm = 0; perm < 5040; perm++) {
+          for (let twist = 0; twist < 729; twist++) {
+            if (table[perm * 729 + twist] !== depth) continue;
+            for (let m = 0; m < 9; m++) {
+              const newTwist = twistMove[twist * 9 + m];
+              const newPerm  = permMove[perm * 9 + m];
+              const idx = newPerm * 729 + newTwist;
+              if (table[idx] === 255) {
+                table[idx] = depth + 1;
+                filled++;
+              }
+            }
+          }
+        }
+        depth++;
+      }
+
+      return table;
+    }
+
+    // -------------------------------------------------------------------------
+    // G2: Initialise all tables on page load; show status message while building.
+    // Uses setTimeout to yield to the browser so the message renders first.
+    // -------------------------------------------------------------------------
+    let twistMove, permMove, pruningTable;
+    let solverReady = false;
+
+    function initSolver() {
+      const status = document.getElementById('status-msg');
+      status.style.color = '#90caf9';
+      status.textContent = 'Initializing solver…';
+
+      // Run heavy table-building in a Web Worker so the UI stays responsive
+      const blob = new Blob(
+        [document.getElementById('solver-worker').textContent],
+        { type: 'application/javascript' }
+      );
+      const workerUrl = URL.createObjectURL(blob);
+      const worker = new Worker(workerUrl);
+
+      worker.onmessage = (e) => {
+        if (e.data.type === 'progress') {
+          status.textContent = `Initializing solver… ${e.data.pct}%`;
+          return;
+        }
+        // type === 'done'
+        twistMove    = e.data.twistMove;
+        permMove     = e.data.permMove;
+        pruningTable = e.data.pruningTable;
+        solverReady  = true;
+        status.textContent = '';
+        status.style.color = '#ff8080';
+        updateSolveButton();
+        worker.terminate();
+        URL.revokeObjectURL(workerUrl);
+      };
+
+      worker.postMessage('start');
+    }
+
+    // Placeholder — will be implemented in I2
+    function updateSolveButton() {}
+
+    // -------------------------------------------------------------------------
+    // H1: IDA* search — recursive depth-first search with pruning
+    // Returns true and populates `moves` array when solution is found.
+    // Prunes branches where pruning table says distance > remaining depth.
+    // Skips consecutive moves on the same face (redundant).
+    // Face of move m: 0=U, 1=R, 2=F  (every 3 moves share a face)
+    // -------------------------------------------------------------------------
+    function search(twist, perm, depth, lastFace, moves) {
+      // Pruning: if lower bound from table exceeds remaining depth, cut off
+      if (pruningTable[perm * 729 + twist] > depth) return false;
+
+      // Solution found
+      if (depth === 0) return twist === 0 && perm === 0;
+
+      for (let m = 0; m < 9; m++) {
+        const face = Math.floor(m / 3);  // 0=U, 1=R, 2=F
+        if (face === lastFace) continue; // skip same-face consecutive moves
+
+        const newTwist = twistMove[twist * 9 + m];
+        const newPerm  = permMove[perm  * 9 + m];
+
+        moves.push(m);
+        if (search(newTwist, newPerm, depth - 1, face, moves)) return true;
+        moves.pop();
+      }
+      return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // H2: solve — IDA* outer loop; iterates maxDepth from 0 upward.
+    // Returns array of move indices, or null if no solution found (bad state).
+    // -------------------------------------------------------------------------
+    function solve(cp, co) {
+      const twist = encodeTwist(co);
+      const perm  = encodePerm(cp);
+
+      // Already solved
+      if (twist === 0 && perm === 0) return [];
+
+      const moves = [];
+      for (let maxDepth = 1; maxDepth <= 20; maxDepth++) {
+        if (search(twist, perm, maxDepth, -1, moves)) return moves;
+      }
+      return null;  // should never happen for a valid 2×2 state
+    }
+
+    window.addEventListener('load', initSolver);
+
+    // -------------------------------------------------------------------------
+    // I1: Painting logic — track active color, handle facelet clicks
+    // -------------------------------------------------------------------------
+
+    // facelets[i] = color index (0–5), or -1 if unpainted
+    const facelets = new Array(24).fill(-1);
+    let activeColor = 0;
+
+    // Set active color when a palette button is clicked
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeColor = parseInt(btn.dataset.color);
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    // Paint a facelet on click; also make facelets keyboard-focusable (N1)
+    document.querySelectorAll('.facelet').forEach(cell => {
+      cell.tabIndex = 0;
+      cell.addEventListener('click', () => {
+        const idx = parseInt(cell.dataset.index);
+        facelets[idx] = activeColor;
+        cell.style.background = COLOR_CSS[activeColor];
+        cell.style.borderColor = COLOR_CSS[activeColor];
+        updateCounts();
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // I2: Color count display + Solve button enable/disable
+    // -------------------------------------------------------------------------
+
+    function updateCounts() {
+      // Tally each color
+      const counts = new Array(6).fill(0);
+      for (const c of facelets) {
+        if (c !== -1) counts[c]++;
+      }
+
+      // Update badge text and .complete class
+      document.querySelectorAll('.count-badge').forEach(badge => {
+        const color = parseInt(badge.dataset.color);
+        const n = counts[color];
+        badge.textContent = COLOR_LABEL[color] + ': ' + n + '/4';
+        badge.classList.toggle('complete', n === 4);
+      });
+
+      updateSolveButton(counts);
+    }
+
+    // Override the placeholder from G2
+    function updateSolveButton(counts) {
+      if (!counts) {
+        // Called from initSolver before any painting — recompute
+        const c = new Array(6).fill(0);
+        for (const col of facelets) { if (col !== -1) c[col]++; }
+        counts = c;
+      }
+      const allPainted = facelets.every(c => c !== -1);
+      const allValid   = counts.every(n => n === 4);
+      document.getElementById('solve-btn').disabled = !(solverReady && allPainted && allValid);
+    }
+
+    // -------------------------------------------------------------------------
+    // J1: validateFacelets — check exactly 4 of each color
+    // Returns null on success, or an error string.
+    // -------------------------------------------------------------------------
+    function validateFacelets(facelets) {
+      const counts = new Array(6).fill(0);
+      for (const c of facelets) counts[c]++;
+      const names = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
+      for (let c = 0; c < 6; c++) {
+        if (counts[c] !== 4) {
+          return `${names[c]} appears ${counts[c]} time${counts[c] === 1 ? '' : 's'} (need exactly 4).`;
+        }
+      }
+      return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // J2: validateCubie — check orientation sum and all 8 cubies present
+    // Returns null on success, or an error string.
+    // -------------------------------------------------------------------------
+    function validateCubie(cp, co) {
+      // All 8 cubies must appear exactly once
+      const seen = new Array(8).fill(false);
+      for (let i = 0; i < 8; i++) {
+        if (cp[i] < 0 || cp[i] > 7 || seen[cp[i]]) {
+          return 'Invalid corner combination — check that each corner cubie appears exactly once.';
+        }
+        seen[cp[i]] = true;
+      }
+
+      // DBL corner (position 7) must be the yellow-blue-orange cubie in the correct orientation.
+      // The solver fixes this corner as its reference point and only uses U, R, F moves.
+      if (cp[7] !== 7) {
+        return 'The yellow-blue-orange corner is not at the bottom-back-left position. ' +
+               'Rotate the whole cube until that corner is at the bottom-back-left, then re-enter the colors.';
+      }
+      if (co[7] !== 0) {
+        return 'The bottom-back-left corner is twisted. ' +
+               'Make sure its yellow sticker faces down, blue faces back, and orange faces left.';
+      }
+
+      // Sum of all orientations must be divisible by 3
+      const twistSum = co.reduce((a, b) => a + b, 0);
+      if (twistSum % 3 !== 0) {
+        return 'Invalid corner orientation — one or more corners may be twisted incorrectly.';
+      }
+
+      return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // J3: Wire Solve button — validate → convert → solve → display or show error
+    // -------------------------------------------------------------------------
+    function setStatus(msg, isError = true) {
+      const el = document.getElementById('status-msg');
+      el.textContent = msg;
+      el.style.color = isError ? '#ff8080' : '#90caf9';
+    }
+
+    document.getElementById('solve-btn').addEventListener('click', () => {
+      setStatus('');
+      document.getElementById('solution-section').hidden = true;
+
+      const faceletError = validateFacelets(facelets);
+      if (faceletError) { setStatus(faceletError); return; }
+
+      const { cp, co } = faceletsToCubie(facelets);
+
+      const cubieError = validateCubie(cp, co);
+      if (cubieError) { setStatus(cubieError); return; }
+
+      const moves = solve(cp, co);
+      if (moves === null) { setStatus('No solution found — please check your cube state.'); return; }
+
+      renderSolution(moves);
+    });
+
+    // -------------------------------------------------------------------------
+    // K1: renderSolution — populate move list, show move count, reveal section
+    // -------------------------------------------------------------------------
+    let currentStep = -1;
+    let totalSteps  = 0;
+
+    // -------------------------------------------------------------------------
+    // K0: createMoveSVG — SVG diagram for a move (face grid + rotation arrow)
+    // -------------------------------------------------------------------------
+
+    // Inverse of faceletsToCubie: reconstruct the 24-element color array from cp/co.
+    // For corner position pos, the cubie's colors rotate by its orientation:
+    //   facelet slot k  →  CORNER_COLORS[cubie][(k − orientation + 3) % 3]
+    function cubieToFacelets(cp, co) {
+      const out = new Array(24);
+      for (let pos = 0; pos < 8; pos++) {
+        const cubie       = cp[pos];
+        const orientation = co[pos];
+        const slots       = CORNER_FACELETS[pos];
+        const colors      = CORNER_COLORS[cubie];
+        for (let k = 0; k < 3; k++) {
+          out[slots[k]] = colors[(k - orientation + 3) % 3];
+        }
+      }
+      return out;
+    }
+
+    // Mini cube-net SVG (cross layout U/L/F/R/B/D) from a 24-element color array.
+    // Cell size 8px, 1px gap. viewBox 72×54, rendered at 108×81.
+    function createMiniNet(faceletColors) {
+      const C = 8, S = C + 1;
+      // [ox, oy, base facelet index]
+      const faces = [
+        [18,  0,  0],   // U
+        [ 0, 18, 16],   // L
+        [18, 18,  8],   // F
+        [36, 18,  4],   // R
+        [54, 18, 20],   // B
+        [18, 36, 12],   // D
+      ];
+      let rects = '';
+      for (const [ox, oy, base] of faces) {
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 2; c++) {
+            const color = COLOR_CSS[faceletColors[base + r * 2 + c]];
+            rects += `<rect x="${ox + c * S}" y="${oy + r * S}" width="${C}" height="${C}" fill="${color}" rx="1"/>`;
+          }
+        }
+      }
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 72 54');
+      svg.setAttribute('width',  '108');
+      svg.setAttribute('height', '81');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.innerHTML = rects;
+      return svg;
+    }
+
+    function createMoveSVG(m, faceletColors) {
+      const face  = Math.floor(m / 3);  // 0=U, 1=R, 2=F
+      const power = m % 3;              // 0=CW quarter, 1=half turn, 2=CCW quarter
+
+      // Real sticker colors for the 4 cells of the affected face
+      const base = [0, 4, 8][face];
+      const c = [0,1,2,3].map(k => COLOR_CSS[faceletColors[base + k]]);
+
+      const arrowColor = '#ffffff';
+
+      // 2×2 face grid: cells 14×14 with 2px gap, top-left at (24,24)
+      const cells =
+        `<rect x="24" y="24" width="14" height="14" rx="2" fill="${c[0]}"/>` +
+        `<rect x="40" y="24" width="14" height="14" rx="2" fill="${c[1]}"/>` +
+        `<rect x="24" y="40" width="14" height="14" rx="2" fill="${c[2]}"/>` +
+        `<rect x="40" y="40" width="14" height="14" rx="2" fill="${c[3]}"/>`;
+
+      const border =
+        `<rect x="22" y="22" width="35" height="35" rx="3" fill="none" ` +
+        `stroke="${arrowColor}" stroke-width="1.5" opacity="0.4"/>`;
+
+      // Arrow: circle radius 28, center (39,39)
+      // CW:   270° CW  arc top→right→bottom→left (11,39), head points up
+      // CCW:  270° CCW arc top→left→bottom→right (67,39), head points up
+      // Half: 180° CW  arc top→right→bottom      (39,67), head points left
+      let arrow;
+      if (power === 0) {
+        arrow =
+          `<path d="M 39 11 A 28 28 0 1 1 11 39" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
+          `<polygon points="11,32 7,40 15,40" fill="${arrowColor}"/>`;
+      } else if (power === 2) {
+        arrow =
+          `<path d="M 39 11 A 28 28 0 1 0 67 39" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
+          `<polygon points="67,32 63,40 71,40" fill="${arrowColor}"/>`;
+      } else {
+        arrow =
+          `<path d="M 39 11 A 28 28 0 0 1 39 67" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
+          `<polygon points="31,67 39,63 39,71" fill="${arrowColor}"/>`;
+      }
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 78 78');
+      svg.setAttribute('width', '52');
+      svg.setAttribute('height', '52');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.innerHTML = cells + border + arrow;
+      return svg;
+    }
+
+    function renderSolution(moves) {
+      totalSteps  = moves.length;
+      currentStep = 0;
+
+      document.getElementById('move-count').textContent =
+        moves.length === 0
+          ? 'Cube is already solved!'
+          : `Optimal solution: ${moves.length} move${moves.length === 1 ? '' : 's'}`;
+
+      // Snapshot the facelets state before each move (plus final solved state)
+      const { cp: cp0, co: co0 } = faceletsToCubie(facelets);
+      const snapshots = [];
+      let curCp = cp0.slice(), curCo = co0.slice();
+      for (let i = 0; i < moves.length; i++) {
+        snapshots.push(cubieToFacelets(curCp, curCo));
+        const res = applyMove(curCp, curCo, MOVES[moves[i]].cp, MOVES[moves[i]].co);
+        curCp = res.cp;
+        curCo = res.co;
+      }
+      snapshots.push(cubieToFacelets(curCp, curCo)); // solved state (unused but available)
+
+      // Build step cards
+      const list = document.getElementById('move-list');
+      list.innerHTML = '';
+      moves.forEach((m, i) => {
+        const li = document.createElement('li');
+        li.dataset.step = i;
+
+        const num = document.createElement('span');
+        num.className = 'step-num';
+        num.textContent = i + 1;
+
+        const netSvg = createMiniNet(snapshots[i]);
+        netSvg.classList.add('mini-net');
+
+        const arrowSvg = createMoveSVG(m, snapshots[i]);
+        arrowSvg.classList.add('move-arrow');
+
+        const desc = document.createElement('span');
+        desc.className = 'move-desc';
+        desc.textContent = MOVE_DESCS[m];
+
+        li.appendChild(num);
+        li.appendChild(netSvg);
+        li.appendChild(arrowSvg);
+        li.appendChild(desc);
+        list.appendChild(li);
+      });
+
+      // Reveal section and update nav
+      document.getElementById('solution-section').hidden = false;
+      highlightStep(0);
+    }
+
+    // -------------------------------------------------------------------------
+    // K2: Step navigation — Prev/Next buttons highlight current move in list
+    // -------------------------------------------------------------------------
+    function highlightStep(step) {
+      currentStep = step;
+
+      document.querySelectorAll('#move-list li').forEach(li => {
+        li.classList.toggle('current-step', parseInt(li.dataset.step) === step);
+      });
+
+      const indicator = document.getElementById('step-indicator');
+      indicator.textContent = totalSteps === 0 ? '' : `Step ${step + 1} of ${totalSteps}`;
+
+      document.getElementById('btn-prev').disabled = step <= 0;
+      document.getElementById('btn-next').disabled = step >= totalSteps - 1;
+    }
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      if (currentStep > 0) highlightStep(currentStep - 1);
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+      if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
+    });
+
+    // -------------------------------------------------------------------------
+    // L1: Keyboard color selection — press W/R/G/Y/O/B to pick a color.
+    //     If a facelet is focused, also paint it and advance focus to the next.
+    // -------------------------------------------------------------------------
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const colorMap = { w: 0, r: 1, g: 2, y: 3, o: 4, b: 5 };
+      const key = e.key.toLowerCase();
+      if (!(key in colorMap)) return;
+      activeColor = colorMap[key];
+      document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.color) === activeColor);
+      });
+
+      // If a facelet is focused, paint it and move to the next one (N2)
+      const focused = document.activeElement;
+      if (focused && focused.classList.contains('facelet')) {
+        const idx = parseInt(focused.dataset.index);
+        facelets[idx] = activeColor;
+        focused.style.background = COLOR_CSS[activeColor];
+        focused.style.borderColor = COLOR_CSS[activeColor];
+        updateCounts();
+
+        const allFacelets = [...document.querySelectorAll('.facelet')];
+        const pos = allFacelets.indexOf(focused);
+        allFacelets[(pos + 1) % allFacelets.length].focus();
+        e.preventDefault();
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // L2: Reset button — clear all facelets and hide solution
+    // -------------------------------------------------------------------------
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      facelets.fill(-1);
+      document.querySelectorAll('.facelet').forEach(cell => {
+        cell.style.background = '';
+        cell.style.borderColor = '';
+      });
+      document.getElementById('solution-section').hidden = true;
+      setStatus('');
+      updateCounts();
+    });
+
+  </script>
+</body>
+</html>

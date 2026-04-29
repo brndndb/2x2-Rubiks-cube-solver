@@ -417,9 +417,48 @@
       color: #aaaacc;
       text-align: center;
     }
+
+    /* =========================================================
+       COLOR DRUM PICKER
+       ========================================================= */
+    #color-drum-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    #color-drum-overlay.active { display: block; }
+
+    #color-drum-strip {
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .drum-circle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.2);
+      will-change: transform, opacity;
+    }
+
+    .facelet.lp-pending {
+      animation: lp-ring 380ms ease-out forwards;
+    }
+
+    @keyframes lp-ring {
+      from { box-shadow: 0 0 0 0   rgba(255,255,255,0.6); }
+      to   { box-shadow: 0 0 0 5px rgba(255,255,255,0.0); }
+    }
   </style>
 </head>
 <body>
+  <div id="color-drum-overlay"><div id="color-drum-strip"></div></div>
 
   <h1>FPLES Cube Solver</h1>
 
@@ -1098,7 +1137,7 @@
     }
 
     // =========================================================================
-    // PAINTING — click-to-cycle; logo facelet locked
+    // PAINTING — tap to cycle; long-press drum picker; logo facelet locked
     // =========================================================================
 
     const facelets = new Array(24).fill(-1);
@@ -1113,17 +1152,168 @@
       updateCounts();
     }
 
+    // =========================================================================
+    // DRUM PICKER — long-press to open; drag to scroll; release to commit
+    // =========================================================================
+
+    const DRUM_STEP     = 58;
+    const DRUM_SLOTS    = 2;
+    const LONG_PRESS_MS = 380;
+
+    const drumOverlay = document.getElementById('color-drum-overlay');
+    const drumStrip   = document.getElementById('color-drum-strip');
+
+    const drumCircles = [];
+    for (let i = 0; i <= DRUM_SLOTS * 2; i++) {
+      const c = document.createElement('div');
+      c.className = 'drum-circle';
+      drumStrip.appendChild(c);
+      drumCircles.push(c);
+    }
+
+    let drumActive    = false;
+    let drumCell      = null;
+    let drumCellIdx   = -1;
+    let drumRawOffset = 0;
+    let drumStartOff  = 0;
+    let drumDragY     = 0;
+    let drumAnimRaf   = null;
+    let lpTimer       = null;
+    let lpCell        = null;
+    let lpPointerId   = null;
+    let lpStartX      = 0;
+    let lpStartY      = 0;
+
+    function renderDrum(rawOffset) {
+      const snapped = Math.round(rawOffset);
+      drumCircles.forEach((circle, i) => {
+        const slot     = i - DRUM_SLOTS;
+        const vPos     = snapped + slot;
+        const colorIdx = ((vPos % 6) + 6) % 6;
+        const dist     = vPos - rawOffset;
+        const absDist  = Math.abs(dist);
+        const scale    = Math.max(0.15, 1 - absDist * 0.28);
+        const opacity  = Math.max(0.08, 1 - absDist * 0.40);
+        const isCenter = absDist < 0.5;
+        circle.style.background  = COLOR_CSS[colorIdx];
+        circle.style.transform   = `translate(-50%,-50%) translateY(${dist * DRUM_STEP}px) scale(${scale})`;
+        circle.style.opacity     = opacity;
+        circle.style.zIndex      = Math.round(10 - absDist * 3);
+        circle.style.borderColor = isCenter ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.18)';
+        circle.style.boxShadow   = isCenter
+          ? '0 0 0 3px rgba(255,255,255,0.22), 0 4px 16px rgba(0,0,0,0.55)'
+          : '0 2px 6px rgba(0,0,0,0.30)';
+      });
+    }
+
+    function activateDrum(cell, startY) {
+      drumActive    = true;
+      drumCell      = cell;
+      drumCellIdx   = parseInt(cell.dataset.index);
+      const cur     = facelets[drumCellIdx];
+      drumRawOffset = cur === -1 ? 0 : cur;
+      drumStartOff  = drumRawOffset;
+      drumDragY     = startY;
+      const rect    = cell.getBoundingClientRect();
+      drumStrip.style.left = (rect.left + rect.width  / 2) + 'px';
+      drumStrip.style.top  = (rect.top  + rect.height / 2) + 'px';
+      drumOverlay.classList.add('active');
+      renderDrum(drumRawOffset);
+      if (navigator.vibrate) navigator.vibrate(25);
+    }
+
+    function updateDrum(clientY) {
+      drumRawOffset = drumStartOff + (drumDragY - clientY) / DRUM_STEP;
+      renderDrum(drumRawOffset);
+    }
+
+    function snapAndCommit() {
+      const from   = drumRawOffset;
+      const to     = Math.round(from);
+      const finalC = ((to % 6) + 6) % 6;
+      cancelAnimationFrame(drumAnimRaf);
+      const t0 = performance.now();
+      (function frame(now) {
+        const p     = Math.min(1, (now - t0) / 160);
+        const eased = 1 - Math.pow(1 - p, 3);
+        renderDrum(from + (to - from) * eased);
+        if (p < 1) { drumAnimRaf = requestAnimationFrame(frame); return; }
+        facelets[drumCellIdx]      = finalC;
+        drumCell.style.background  = COLOR_CSS[finalC];
+        drumCell.style.borderColor = COLOR_CSS[finalC];
+        updateCounts();
+        closeDrum();
+      })(t0);
+    }
+
+    function closeDrum() {
+      drumActive  = false;
+      drumCell    = null;
+      drumCellIdx = -1;
+      drumOverlay.classList.remove('active');
+      cancelAnimationFrame(drumAnimRaf);
+    }
+
+    function cancelLP() {
+      clearTimeout(lpTimer);
+      lpTimer = null;
+      if (lpCell) { lpCell.classList.remove('lp-pending'); lpCell = null; }
+    }
+
     document.querySelectorAll('.facelet').forEach(cell => {
-      cell.addEventListener('click', () => {
-        const idx = parseInt(cell.dataset.index);
-        if (idx === LOGO_FACELET) return;
+      cell.addEventListener('pointerdown', e => {
+        if (parseInt(cell.dataset.index) === LOGO_FACELET) return;
+        if (lpTimer || drumActive) return;
+        e.preventDefault();
+        lpCell      = cell;
+        lpPointerId = e.pointerId;
+        lpStartX    = e.clientX;
+        lpStartY    = e.clientY;
+        cell.classList.add('lp-pending');
+        lpTimer = setTimeout(() => {
+          lpCell = null;
+          cell.classList.remove('lp-pending');
+          activateDrum(cell, lpStartY);
+        }, LONG_PRESS_MS);
+      }, { passive: false });
+    });
+
+    document.addEventListener('pointermove', e => {
+      if (drumActive) {
+        if (e.pointerId === lpPointerId) { e.preventDefault(); updateDrum(e.clientY); }
+        return;
+      }
+      if (e.pointerId !== lpPointerId || !lpTimer) return;
+      const dx = e.clientX - lpStartX, dy = e.clientY - lpStartY;
+      if (dx * dx + dy * dy > 100) cancelLP();
+    }, { passive: false });
+
+    document.addEventListener('pointerup', e => {
+      if (e.pointerId !== lpPointerId) return;
+      const wasShortTap = !!lpCell;
+      const tappedCell  = lpCell;
+      cancelLP();
+      if (drumActive) {
+        snapAndCommit();
+      } else if (wasShortTap && tappedCell) {
+        const idx  = parseInt(tappedCell.dataset.index);
         const cur  = facelets[idx];
         const next = cur === -1 ? 0 : (cur + 1) % 6;
         facelets[idx] = next;
-        cell.style.background  = COLOR_CSS[next];
-        cell.style.borderColor = COLOR_CSS[next];
+        tappedCell.style.background  = COLOR_CSS[next];
+        tappedCell.style.borderColor = COLOR_CSS[next];
         updateCounts();
-      });
+      }
+    });
+
+    document.addEventListener('pointercancel', e => {
+      if (e.pointerId !== lpPointerId) return;
+      cancelLP();
+      if (drumActive) closeDrum();
+    });
+
+    document.addEventListener('contextmenu', e => {
+      if (lpTimer || drumActive) e.preventDefault();
     });
 
     // =========================================================================
@@ -1235,14 +1425,178 @@
     const FACE_LABELS = ['Front Side', 'Right Side', 'Back Side', 'Left Side', 'Top Side', 'Bottom Side'];
     const FACE_INSTRUCTIONS = [
       '<strong>Before you start:</strong> Hold the cube so the white logo faces you in the upper-left corner. Fill in the <strong>Front Side</strong> — the logo square is already locked in.',
-      'Rotate the cube to see the <strong>Right Side</strong> and tap each square to match its color.',
+      'Rotate the cube to see the <strong>Right Side</strong>. <strong>Tap</strong> a square to cycle colors, or <strong>hold</strong> to open the color picker.',
       'Fill in the <strong>Back Side</strong> — the face opposite the white logo.',
       'Fill in the <strong>Left Side</strong>.',
       'Fill in the <strong>Top Side</strong>.',
       'Fill in the <strong>Bottom Side</strong>, then tap <strong>Solve</strong> when you\'re ready.',
     ];
+
+    // 2D slide transition between faces.
+    // dx/dy = direction of the sweep (-1=left/up, +1=right/down).
+    // edgeCells = the two cell indices (0-3) whose colors flow into the neighbor strip.
+    // stripSuffix = which strip side on the destination face they land on ('l' or 'r').
+    const TRANSITIONS = {
+      '0-1': { dx: -1, dy:  0, edgeCells: [1,3], stripSuffix: 'l' },  // F→R
+      '1-2': { dx: -1, dy:  0, edgeCells: [1,3], stripSuffix: 'l' },  // R→B
+      '2-3': { dx: -1, dy:  0, edgeCells: [1,3], stripSuffix: 'l' },  // B→L
+      '1-0': { dx:  1, dy:  0, edgeCells: [0,2], stripSuffix: 'r' },  // R→F
+      '2-1': { dx:  1, dy:  0, edgeCells: [0,2], stripSuffix: 'r' },  // B→R
+      '3-2': { dx:  1, dy:  0, edgeCells: [0,2], stripSuffix: 'r' },  // L→B
+      // Two-step intermediates (L↔U and U↔D via Front)
+      '3-0': { dx: -1, dy:  0, edgeCells: null,  stripSuffix: null }, // L→F (step 1 of L→U): Front from right
+      '0-4': { dx:  0, dy:  1, edgeCells: null,  stripSuffix: null }, // F→U (step 2 of L→U): Front exits down
+      '4-0': { dx:  0, dy: -1, edgeCells: null,  stripSuffix: null }, // U→F (step 1 of U→L/U→D): Top exits up
+      '0-3': { dx:  1, dy:  0, edgeCells: null,  stripSuffix: null }, // F→L (step 2 of U→L): Front exits right
+      '0-5': { dx:  0, dy: -1, edgeCells: null,  stripSuffix: null }, // F→D (step 2 of U→D): Front exits up
+      '5-0': { dx:  0, dy:  1, edgeCells: null,  stripSuffix: null }, // D→F (step 1 of D→U): Bottom exits down
+    };
+
     let currentFaceIdx = 0;
     let appMode = 'input'; // 'input' | 'solution'
+
+    function activateFace(idx) {
+      currentFaceIdx = idx;
+      [...FACE_ORDER, 'SOL'].forEach(f =>
+        document.getElementById(`face-section-${f}`).classList.remove('active'));
+      document.getElementById(`face-section-${FACE_ORDER[idx]}`).classList.add('active');
+      document.getElementById('face-indicator').textContent =
+        `Face ${idx + 1} of 6 \u2014 ${FACE_LABELS[idx]}`;
+      document.getElementById('instructions').innerHTML = FACE_INSTRUCTIONS[idx];
+      document.getElementById('btn-face-prev').disabled = idx === 0;
+      const nextBtn = document.getElementById('btn-face-next');
+      if (idx === 5) {
+        nextBtn.textContent = 'Solve';
+        nextBtn.classList.add('solve-mode');
+        updateSolveButton();
+      } else {
+        nextBtn.textContent = 'Next \u2192';
+        nextBtn.classList.remove('solve-mode');
+        nextBtn.disabled = false;
+      }
+    }
+
+    function showFace(idx) { activateFace(idx); }
+
+    function animateFaceTransition(fromIdx, toIdx, dur) {
+      // Two-step: L→U goes via Front (Front from right, then Front exits down to Top)
+      if (fromIdx === 3 && toIdx === 4) {
+        animateFaceTransition(3, 0, 360);
+        setTimeout(() => animateFaceTransition(0, 4, 360), 420);
+        return;
+      }
+      // Two-step: U→L goes via Front (Top exits up to Front, then Front exits right to Left)
+      if (fromIdx === 4 && toIdx === 3) {
+        animateFaceTransition(4, 0, 360);
+        setTimeout(() => animateFaceTransition(0, 3, 360), 420);
+        return;
+      }
+      // Two-step: U→D goes via Front (Top exits up to Front, then Front exits up to Bottom)
+      if (fromIdx === 4 && toIdx === 5) {
+        animateFaceTransition(4, 0, 360);
+        setTimeout(() => animateFaceTransition(0, 5, 360), 420);
+        return;
+      }
+      // Two-step: D→U goes via Front (Bottom exits down to Front, then Front exits down to Top)
+      if (fromIdx === 5 && toIdx === 4) {
+        animateFaceTransition(5, 0, 360);
+        setTimeout(() => animateFaceTransition(0, 4, 360), 420);
+        return;
+      }
+
+      const key = `${fromIdx}-${toIdx}`;
+      const tr  = TRANSITIONS[key];
+      if (!tr) { activateFace(toIdx); return; }
+
+      const fromFace = FACE_ORDER[fromIdx];
+      const toFace   = FACE_ORDER[toIdx];
+      const DUR = dur || 360;
+
+      // 1. Snapshot the old face cells (position + colour) before any DOM change
+      const faceEl   = document.getElementById(`face-${fromFace}`);
+      const faceRect = faceEl.getBoundingClientRect();
+      const cellData = [];
+      faceEl.querySelectorAll('.facelet').forEach((cell, i) => {
+        cellData.push({
+          r:      cell.getBoundingClientRect(),
+          bg:     getComputedStyle(cell).backgroundColor,
+          isEdge: tr.edgeCells ? tr.edgeCells.includes(i) : false,
+        });
+      });
+
+      // 2. Switch to the new face (natural layout position, no animation yet)
+      activateFace(toIdx);
+
+      // 3. Measure context-strip targets NOW — before any transform animations start
+      //    (getBoundingClientRect reflects WAAPI transforms; measure before animate() calls)
+      let stripRects = null;
+      if (tr.edgeCells && tr.stripSuffix) {
+        const s0 = document.getElementById(`ctx-${toFace}-${tr.stripSuffix}0`);
+        const s1 = document.getElementById(`ctx-${toFace}-${tr.stripSuffix}1`);
+        if (s0 && s1) stripRects = [s0.getBoundingClientRect(), s1.getBoundingClientRect()];
+      }
+
+      // 4. Slide the new face section in from the opposite direction.
+      //    Use viewport units so it starts truly off-screen, then lands at natural position.
+      const newSection = document.getElementById(`face-section-${toFace}`);
+      // dx=-1 (compress left)  → old exits LEFT,  new face comes from right → start at +vw offset
+      // dx=+1 (compress right) → old exits RIGHT, new face comes from left  → start at -vw offset
+      // dy=-1 (compress up)    → old exits UP,    new face comes from below → start at +vh offset
+      // dy=+1 (compress down)  → old exits DOWN,  new face comes from above → start at -vh offset
+      const slideX = tr.dx !== 0 ? -tr.dx * window.innerWidth  * 0.65 : 0;
+      const slideY = tr.dy !== 0 ? -tr.dy * window.innerHeight * 0.45 : 0;
+      newSection.animate(
+        [
+          { transform: `translate(${slideX}px,${slideY}px)`, opacity: 0.2 },
+          { transform: 'translate(0,0)',                      opacity: 1   },
+        ],
+        { duration: DUR, easing: 'cubic-bezier(0.25,0.46,0.45,0.94)' }
+      );
+
+      // 5. Animate ghost cells over the departing face
+      let edgeCount = 0;
+      cellData.forEach(cd => {
+        const g = document.createElement('div');
+        g.style.cssText =
+          `position:fixed;left:${cd.r.left}px;top:${cd.r.top}px;` +
+          `width:${cd.r.width}px;height:${cd.r.height}px;` +
+          `background:${cd.bg};border-radius:5px;` +
+          `z-index:9999;pointer-events:none;will-change:transform,opacity;`;
+        document.body.appendChild(g);
+
+        if (cd.isEdge && stripRects) {
+          // Edge cell → morph into the context-strip rectangle.
+          // Translate the element's centre to the strip's centre, then scale to strip size.
+          const sr  = stripRects[edgeCount++];
+          const tx  = (sr.left + sr.width  / 2) - (cd.r.left + cd.r.width  / 2);
+          const ty  = (sr.top  + sr.height / 2) - (cd.r.top  + cd.r.height / 2);
+          const scx = sr.width  / cd.r.width;
+          const scy = sr.height / cd.r.height;
+          g.animate(
+            [
+              { transform: 'translate(0,0) scale(1,1)',                                  opacity: 1 },
+              { transform: `translate(${tx}px,${ty}px) scale(${scx},${scy})`, opacity: 0 },
+            ],
+            { duration: DUR, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+          );
+        } else {
+          // Non-edge cell → compress toward the sweep direction and fade out.
+          // Travel ≈ 85 % of one face-width so it stays near the face area.
+          const endTX = tr.dx * faceRect.width  * 0.85;
+          const endTY = tr.dy * faceRect.height * 1.8;
+          const scx   = tr.dx !== 0 ? 0.04 : 1;   // collapse horizontally for H sweeps
+          const scy   = tr.dy !== 0 ? 0.04 : 1;   // collapse vertically   for V sweeps
+          g.animate(
+            [
+              { transform: 'translate(0,0) scale(1,1)',                                  opacity: 1 },
+              { transform: `translate(${endTX}px,${endTY}px) scale(${scx},${scy})`, opacity: 0 },
+            ],
+            { duration: DUR, easing: 'cubic-bezier(0.4,0,0.8,1)', fill: 'forwards' }
+          );
+        }
+        setTimeout(() => g.remove(), DUR + 60);
+      });
+    }
 
     function showFace(idx) {
       currentFaceIdx = idx;
@@ -1270,15 +1624,16 @@
       if (appMode === 'solution') {
         if (currentStep > 0) highlightStep(currentStep - 1);
       } else {
-        if (currentFaceIdx > 0) showFace(currentFaceIdx - 1);
+        if (currentFaceIdx > 0) animateFaceTransition(currentFaceIdx, currentFaceIdx - 1);
       }
     });
 
     document.getElementById('btn-face-next').addEventListener('click', () => {
       if (appMode === 'solution') {
         if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
+        else launchConfetti();
       } else {
-        if (currentFaceIdx < 5) showFace(currentFaceIdx + 1);
+        if (currentFaceIdx < 5) animateFaceTransition(currentFaceIdx, currentFaceIdx + 1);
         else triggerSolve();
       }
     });
@@ -1364,11 +1719,8 @@
         `<rect x="120" y="72"  width="42" height="42" rx="4" fill="${c[1]}"/>` +
         `<rect x="72"  y="120" width="42" height="42" rx="4" fill="${c[2]}"/>` +
         `<rect x="120" y="120" width="42" height="42" rx="4" fill="${c[3]}"/>` +
+        `<rect x="72" y="72" width="90" height="90" rx="3" fill="none" stroke="${aw}" stroke-width="1" opacity="0.15"/>` +
         `</g>`;
-
-      const border =
-        `<rect x="72" y="72" width="90" height="90" rx="3" fill="none" ` +
-        `stroke="${aw}" stroke-width="1" opacity="0.15"/>`;
 
       // Mini Front Side icon — upper-right corner (safe from all arrow paths)
       const mx = 191, my = 19, mc = 16, mg = 3;
@@ -1401,7 +1753,7 @@
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 234 234');
       svg.setAttribute('aria-hidden', 'true');
-      svg.innerHTML = faceGroup + border + frontMini + arrow;
+      svg.innerHTML = faceGroup + frontMini + arrow;
       return svg;
     }
 
@@ -1455,8 +1807,8 @@
       document.getElementById('btn-face-prev').disabled = step <= 0;
       const nextBtn = document.getElementById('btn-face-next');
       nextBtn.classList.remove('solve-mode');
-      nextBtn.disabled = step >= totalSteps - 1;
-      nextBtn.textContent = step >= totalSteps - 1 ? 'Done' : 'Next \u2192';
+      nextBtn.disabled = false;
+      nextBtn.textContent = step >= totalSteps - 1 ? 'Done \u2728' : 'Next \u2192';
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
@@ -1468,10 +1820,95 @@
     });
 
     // =========================================================================
+    // CONFETTI
+    // =========================================================================
+
+    function launchConfetti() {
+      const COLORS = [
+        '#ffffff','#009b48','#c41e3a','#0051a2','#ff5800','#ffd500',
+        '#ff6b6b','#ffd700','#6bcb77','#4d96ff','#cc5de8','#20c997',
+      ];
+
+      // ── Phase 1: spin the solution content that's currently on screen ──────
+      const sol  = document.getElementById('face-section-SOL');
+      const rect = sol.getBoundingClientRect();
+      const cx   = rect.left + rect.width  / 2;
+      const cy   = rect.top  + rect.height / 2;
+
+      const SPIN_DUR = 620;
+
+      // 3 full rotations, slight scale-up build
+      sol.animate(
+        [
+          { transform: 'scale(1)    rotate(0deg)',    opacity: 1 },
+          { transform: 'scale(1.08) rotate(1080deg)', opacity: 1 },
+        ],
+        { duration: SPIN_DUR, easing: 'cubic-bezier(0.2,0,0.85,1)', fill: 'forwards' }
+      );
+
+      // ── Phase 2: explode outward, then rain confetti ───────────────────────
+      setTimeout(() => {
+        sol.animate(
+          [
+            { transform: 'scale(1.08) rotate(1080deg)', opacity: 1 },
+            { transform: 'scale(4.5)  rotate(1200deg)', opacity: 0 },
+          ],
+          { duration: 280, easing: 'cubic-bezier(0.2,0,0.3,1)', fill: 'forwards' }
+        );
+
+        // 80 pieces burst outward from the explosion centre, then fall slowly
+        const N = 80;
+        for (let i = 0; i < N; i++) {
+          const el    = document.createElement('div');
+          const color = COLORS[i % COLORS.length];
+          const w     = 6  + Math.random() * 6;
+          const h     = 9  + Math.random() * 8;
+          const delay = Math.random() * 180;
+          const dur   = 3200 + Math.random() * 1600;  // slow fall: 3.2–4.8 s
+
+          el.style.cssText =
+            `position:fixed;left:${cx - w/2}px;top:${cy}px;` +
+            `width:${w}px;height:${h}px;` +
+            `background:${color};border-radius:2px;` +
+            `z-index:10000;pointer-events:none;will-change:transform,opacity;`;
+          el.className = 'confetti-piece';
+          document.body.appendChild(el);
+
+          // Each piece: radial burst → gravity arc → fade
+          const angle  = Math.random() * Math.PI * 2;
+          const speed  = 80  + Math.random() * 200;
+          const ex     = Math.cos(angle) * speed;
+          const ey     = Math.sin(angle) * speed;
+          const finalX = ex  + (Math.random() - 0.5) * 160;
+          const finalY = ey  + window.innerHeight * 0.72 + Math.random() * window.innerHeight * 0.22;
+          const rotate = (Math.random() - 0.5) * 1080;
+
+          el.animate(
+            [
+              { transform: `translate(0,0) rotate(0deg)`,
+                opacity: 1 },
+              { transform: `translate(${ex}px,${ey}px) rotate(${rotate * 0.35}deg)`,
+                opacity: 1, offset: 0.22 },
+              { transform: `translate(${finalX}px,${finalY}px) rotate(${rotate}deg)`,
+                opacity: 0 },
+            ],
+            { duration: dur, delay, easing: 'cubic-bezier(0.12,0.9,0.4,1)', fill: 'forwards' }
+          );
+
+          setTimeout(() => el.remove(), dur + delay + 80);
+        }
+      }, SPIN_DUR + 20);
+    }
+
+    // =========================================================================
     // RESET
     // =========================================================================
 
     document.getElementById('reset-btn').addEventListener('click', () => {
+      // Clear any in-flight confetti pieces
+      document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
+      // Cancel spin/explode animation held on the solution section
+      document.getElementById('face-section-SOL').getAnimations().forEach(a => a.cancel());
       facelets.fill(-1);
       facelets[LOGO_FACELET] = 0;
       document.querySelectorAll('.facelet').forEach(cell => {
@@ -1518,14 +1955,15 @@
           if (appMode === 'solution') {
             if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
           } else {
-            if (currentFaceIdx < 5) showFace(currentFaceIdx + 1); else triggerSolve();
+            if (currentFaceIdx < 5) animateFaceTransition(currentFaceIdx, currentFaceIdx + 1);
+            else triggerSolve();
           }
         },
         () => {
           if (appMode === 'solution') {
             if (currentStep > 0) highlightStep(currentStep - 1);
           } else {
-            if (currentFaceIdx > 0) showFace(currentFaceIdx - 1);
+            if (currentFaceIdx > 0) animateFaceTransition(currentFaceIdx, currentFaceIdx - 1);
           }
         }
       );

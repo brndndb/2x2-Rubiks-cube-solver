@@ -3,18 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>2x2 Rubik's Cube Solver</title>
+  <title>FPLES Cube Solver</title>
   <style>
-    /* B1: Page layout */
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
-    /* L3: --cell drives all cube sizing; shrunk in media queries below */
     :root {
-      --cell: 52px;
+      /* fills viewport edge-to-edge on mobile; 56px = 2×8 body-padding + 2×11 strip+gap + 2×7 face-chrome + 4 gap */
+      --cell: calc((100vw - 56px) / 2);
     }
 
     body {
@@ -22,68 +21,75 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 24px;
-      padding: 32px 16px;
+      gap: 16px;
+      padding: 16px 8px 40px;
       background: #1a1a2e;
       color: #e0e0e0;
       font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 16px;
+      overflow-x: hidden;
     }
 
     h1 {
       font-size: 1.6rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
       color: #ffffff;
       text-align: center;
     }
 
-    /* B2: Cube net layout */
+    #instructions {
+      width: 100%;
+      max-width: 460px;
+      background: #16213e;
+      border: 1px solid #2e2e5a;
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-size: 0.9rem;
+      color: #aaaacc;
+      line-height: 1.65;
+      text-align: center;
+    }
+
+    #instructions strong {
+      color: #90caf9;
+    }
+
     #cube-net {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 6px;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
     }
 
-    .face-row {
-      display: flex;
-      flex-direction: row;
-      gap: 6px;
-    }
-
-    /* U/D indent = one face-wrap width + row-gap
-       face-wrap width = 2*cell + cell-gap(3px) + face-padding(8px) + border(2px) = 2*cell + 13px
-       + row-gap(6px) = 2*cell + 19px */
-    #row-top,
-    #row-bottom {
-      padding-left: calc(2 * var(--cell) + 19px);
-    }
-
-    .face-wrap {
-      display: flex;
+    .face-section {
+      display: none;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
+    }
+
+    .face-section.active {
+      display: flex;
     }
 
     .face-label {
-      font-size: 0.75rem;
+      font-size: 0.78rem;
       font-weight: 700;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       color: #8888aa;
       text-transform: uppercase;
-      line-height: 1;
     }
 
     .face {
       display: grid;
       grid-template-columns: repeat(2, var(--cell));
       grid-template-rows: repeat(2, var(--cell));
-      gap: 3px;
-      padding: 4px;
+      gap: 4px;
+      padding: 6px;
       background: #12122a;
-      border-radius: 6px;
+      border-radius: 8px;
       border: 1px solid #33335a;
     }
 
@@ -92,22 +98,24 @@
       height: var(--cell);
       background: #2e2e4a;
       border: 2px solid #555580;
-      border-radius: 4px;
+      border-radius: 5px;
       cursor: pointer;
       transition: border-color 0.15s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
     }
 
-    .facelet:hover {
+    .facelet:hover:not(.logo-locked) {
       border-color: #aaaacc;
-      transform: scale(1.06);
+      transform: scale(1.05);
     }
 
-    .facelet:focus {
-      outline: 2px solid #4a90e2;
-      outline-offset: 2px;
+    .facelet.logo-locked {
+      background: #ffffff !important;
+      border-color: #dddddd !important;
+      cursor: not-allowed;
     }
 
-    /* B3: Color palette */
     #controls {
       display: flex;
       flex-direction: column;
@@ -115,52 +123,17 @@
       gap: 12px;
     }
 
-    #palette {
-      display: flex;
-      gap: 10px;
-    }
-
-    .color-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      border: 3px solid transparent;
-      cursor: pointer;
-      transition: border-color 0.15s, transform 0.1s;
-    }
-
-    .color-btn:hover {
-      transform: scale(1.1);
-    }
-
-    .color-btn.active {
-      border-color: #ffffff;
-      transform: scale(1.15);
-    }
-
-    /* Cube face colors */
-    .color-btn[data-color="0"] { background: #ffffff; } /* White  - U */
-    .color-btn[data-color="1"] { background: #c41e3a; } /* Red    - R */
-    .color-btn[data-color="2"] { background: #009b48; } /* Green  - F */
-    .color-btn[data-color="3"] { background: #ffd500; } /* Yellow - D */
-    .color-btn[data-color="4"] { background: #ff5800; } /* Orange - L */
-    .color-btn[data-color="5"] { background: #0051a2; } /* Blue   - B */
-
     #color-counts {
       display: flex;
-      gap: 8px;
-    }
-
-    #key-hint {
-      font-size: 0.72rem;
-      color: #666699;
-      letter-spacing: 0.05em;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     .count-badge {
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 0.8rem;
+      padding: 4px 10px;
+      border-radius: 14px;
+      font-size: 0.78rem;
       font-weight: 600;
       background: #2e2e4a;
       color: #e0e0e0;
@@ -171,12 +144,18 @@
       color: #90ee90;
     }
 
+    #btn-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
     #solve-btn {
-      padding: 10px 36px;
-      font-size: 1rem;
-      font-weight: 600;
+      padding: 12px 44px;
+      font-size: 1.1rem;
+      font-weight: 700;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       background: #4a90e2;
       color: #fff;
       cursor: pointer;
@@ -193,11 +172,11 @@
     }
 
     #reset-btn {
-      padding: 10px 24px;
+      padding: 12px 28px;
       font-size: 1rem;
       font-weight: 600;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       background: #3a2a2a;
       color: #cc8888;
       cursor: pointer;
@@ -208,112 +187,90 @@
       background: #5a2a2a;
     }
 
-    #btn-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
     #status-msg {
       min-height: 1.2em;
       font-size: 0.9rem;
       color: #ff8080;
+      text-align: center;
+      max-width: 380px;
     }
 
-    /* B4: Solution section */
     #solution-section {
       width: 100%;
-      max-width: 760px;
+      max-width: 460px;
       background: #16213e;
       border: 1px solid #2e2e5a;
-      border-radius: 10px;
-      padding: 20px 24px;
+      border-radius: 12px;
+      padding: 16px 12px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      align-items: center;
+      gap: 20px;
     }
 
-    /* override browser [hidden] so our flex layout applies when visible */
     #solution-section:not([hidden]) {
       display: flex;
     }
 
     #solution-header {
-      text-align: center;
       font-size: 1rem;
       font-weight: 600;
       color: #90caf9;
-    }
-
-    #move-list {
-      list-style: none;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      padding: 0;
-    }
-
-    #move-list li {
-      background: #2e2e4a;
-      border: 2px solid transparent;
-      border-radius: 8px;
-      padding: 8px 10px;
-      display: grid;
-      grid-template-areas:
-        "num   num"
-        "net   arrow"
-        "net   desc";
-      grid-template-columns: auto auto;
-      gap: 2px 8px;
-      align-items: center;
-      cursor: default;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    #move-list .step-num {
-      grid-area: num;
-      font-size: 0.6rem;
-      color: #8888aa;
-      line-height: 1;
       text-align: center;
     }
 
-    .mini-net   { grid-area: net;   align-self: center; }
-    .move-arrow { grid-area: arrow; }
-
-    #move-list .move-desc {
-      grid-area: desc;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #e0e0e0;
-      line-height: 1.3;
+    #step-display {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
     }
 
-    #move-list li.current-step {
-      background: #1a4a7a;
-      border-color: #4a90e2;
+    #step-face-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      text-align: center;
+      letter-spacing: 0.04em;
     }
 
-    #move-list li.current-step .move-desc { color: #ffffff; }
-    #move-list li.current-step .step-num  { color: #90caf9; }
+    #step-visual {
+      display: flex;
+      justify-content: center;
+    }
+
+    #step-visual svg {
+      width: min(280px, calc(100vw - 48px));
+      height: auto;
+    }
+
+    #step-instruction {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #ffd700;
+      text-align: center;
+    }
 
     #solution-nav {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      width: 100%;
     }
 
     #solution-nav button {
-      padding: 6px 18px;
-      font-size: 0.9rem;
-      font-weight: 600;
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: 700;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       background: #2e2e4a;
       color: #e0e0e0;
       cursor: pointer;
       transition: background 0.15s, opacity 0.15s;
+      min-width: 90px;
     }
 
     #solution-nav button:disabled {
@@ -326,185 +283,363 @@
     }
 
     #step-indicator {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: #aaaacc;
+      text-align: center;
+      flex: 1;
     }
 
-    /* L2: Instructions box */
-    #instructions {
+    /* Desktop/tablet: lock to compact fixed-cell layout */
+    @media (min-width: 500px) {
+      :root { --cell: 80px; }
+      body { padding: 24px 16px 48px; gap: 20px; }
+      #solution-section { padding: 24px 20px; }
+    }
+
+    /* Tiny phones: font size relief */
+    @media (max-width: 360px) {
+      h1 { font-size: 1.3rem; }
+      #step-face-name { font-size: 1.2rem; }
+      #step-instruction { font-size: 1rem; }
+    }
+
+    /* Context border strips for Top/Bottom faces */
+    .face-ctx-wrap {
+      position: relative;
+      margin-top: 14px; /* clearance for the absolute-positioned top strip */
+    }
+
+    .ctx-strip {
+      position: absolute;
+      display: flex;
+      gap: 4px;
+    }
+
+    .ctx-cell {
+      background: #2e2e4a;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .ctx-strip-h {
+      flex-direction: row;
+      height: 8px;
+      left: 7px;
+      width: calc(var(--cell) * 2 + 4px);
+    }
+
+    .ctx-strip-h .ctx-cell {
+      width: var(--cell);
+      height: 8px;
+    }
+
+    .ctx-strip-top {
+      bottom: calc(100% + 3px);
+    }
+
+    .ctx-strip-bot {
+      top: calc(100% + 3px);
+    }
+
+    .ctx-strip-v {
+      flex-direction: column;
+      width: 8px;
+      top: 7px;
+      height: calc(var(--cell) * 2 + 4px);
+    }
+
+    .ctx-strip-v .ctx-cell {
+      height: var(--cell);
+      width: 8px;
+    }
+
+    .ctx-strip-left {
+      right: calc(100% + 3px);
+    }
+
+    .ctx-strip-right {
+      left: calc(100% + 3px);
+    }
+
+    #step-prefix {
+      font-size: 0.82rem;
+      color: #8888aa;
+      text-align: center;
+    }
+
+    #face-section-SOL {
+      gap: 14px;
+    }
+
+    #face-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
       max-width: 460px;
-      background: #16213e;
-      border: 1px solid #2e2e5a;
-      border-radius: 10px;
-      padding: 14px 20px;
-      font-size: 0.85rem;
+    }
+
+    #face-nav button {
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      background: #2e2e4a;
+      color: #e0e0e0;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+      min-width: 90px;
+    }
+
+    #face-nav button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    #face-nav button:not(:disabled):hover {
+      background: #4a4a6a;
+    }
+
+    #btn-face-next.solve-mode {
+      background: #4a90e2;
+      color: #fff;
+    }
+
+    #btn-face-next.solve-mode:not(:disabled):hover {
+      background: #357abd;
+    }
+
+    #face-indicator {
+      flex: 1;
+      font-size: 0.9rem;
       color: #aaaacc;
-      line-height: 1.6;
-    }
-
-    #instructions strong {
-      color: #90caf9;
-    }
-
-    #instructions ol {
-      margin: 6px 0 0 18px;
-    }
-
-    /* L3: Responsive breakpoints — shrink --cell so cube fits on small screens.
-       Middle row width = 4*(2*cell + 13px) + 3*6px = 8*cell + 70px
-       Available width  = screen - 32px body padding
-       Breakpoints chosen so the cube never overflows its container. */
-
-    /* ≤560px: 44px cells → middle row ≈ 422px, fits on 454px+ screens */
-    @media (max-width: 560px) {
-      :root { --cell: 44px; }
-      body  { gap: 18px; padding-top: 20px; }
-    }
-
-    /* ≤450px: 36px cells → middle row ≈ 358px, fits on 390px+ screens */
-    @media (max-width: 450px) {
-      :root { --cell: 36px; }
-      #color-counts { flex-wrap: wrap; justify-content: center; }
-    }
-
-    /* ≤380px: 30px cells → middle row ≈ 310px, fits on 342px+ screens */
-    @media (max-width: 380px) {
-      :root { --cell: 30px; }
-      h1    { font-size: 1.3rem; }
-      #instructions { font-size: 0.78rem; }
-      .color-btn { width: 32px; height: 32px; }
+      text-align: center;
     }
   </style>
 </head>
 <body>
 
-  <h1>2x2 Rubik's Cube Solver</h1>
+  <h1>FPLES Cube Solver</h1>
 
-  <div id="instructions">
-    <strong>Before you start:</strong> find the corner that has
-    <strong>yellow + blue + orange</strong> stickers — that is your
-    <strong>Down-Back-Left (DBL)</strong> reference corner.
-    <ol>
-      <li>Rotate the <em>whole cube</em> until that corner sits at the bottom-back-left, with yellow facing down, blue facing back, and orange facing left. Do not move it again.</li>
-      <li>Tab between facelets and press <strong>W R G Y O B</strong> to paint — or click a facelet after selecting a palette color.</li>
-      <li>Fill all 24 stickers (4 per color), then press <strong>Solve</strong>.</li>
-      <li>Use <strong>Next / Prev</strong> to step through the solution one move at a time. Keep the cube in the same orientation throughout.</li>
-    </ol>
-  </div>
+  <div id="instructions"></div>
 
-  <!-- Cube net: cross layout U / L F R B / D -->
-  <!-- Facelet indices match the 24-element string: U(0-3) R(4-7) F(8-11) D(12-15) L(16-19) B(20-23) -->
+  <!-- Faces stacked vertically: Front, Right, Back, Left, Top, Bottom -->
   <div id="cube-net">
 
-    <!-- U face (top) -->
-    <div class="face-row" id="row-top">
-      <div class="face-wrap">
-        <div class="face-label">U</div>
-        <div class="face" id="face-U">
-          <div class="facelet" data-index="0"></div>
-          <div class="facelet" data-index="1"></div>
-          <div class="facelet" data-index="2"></div>
-          <div class="facelet" data-index="3"></div>
+    <div class="face-section" id="face-section-F">
+      <div class="face-label">Front Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-F-t0"></div>
+          <div class="ctx-cell" id="ctx-F-t1"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- Middle row: L F R B -->
-    <div class="face-row" id="row-middle">
-      <div class="face-wrap">
-        <div class="face-label">L</div>
-        <div class="face" id="face-L">
-          <div class="facelet" data-index="16"></div>
-          <div class="facelet" data-index="17"></div>
-          <div class="facelet" data-index="18"></div>
-          <div class="facelet" data-index="19"></div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-F-l0"></div>
+          <div class="ctx-cell" id="ctx-F-l1"></div>
         </div>
-      </div>
-      <div class="face-wrap">
-        <div class="face-label">F</div>
         <div class="face" id="face-F">
-          <div class="facelet" data-index="8"></div>
+          <div class="facelet logo-locked" data-index="8"></div>
           <div class="facelet" data-index="9"></div>
           <div class="facelet" data-index="10"></div>
           <div class="facelet" data-index="11"></div>
         </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-F-r0"></div>
+          <div class="ctx-cell" id="ctx-F-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-F-b0"></div>
+          <div class="ctx-cell" id="ctx-F-b1"></div>
+        </div>
       </div>
-      <div class="face-wrap">
-        <div class="face-label">R</div>
+    </div>
+
+    <div class="face-section" id="face-section-R">
+      <div class="face-label">Right Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-R-t0"></div>
+          <div class="ctx-cell" id="ctx-R-t1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-R-l0"></div>
+          <div class="ctx-cell" id="ctx-R-l1"></div>
+        </div>
         <div class="face" id="face-R">
           <div class="facelet" data-index="4"></div>
           <div class="facelet" data-index="5"></div>
           <div class="facelet" data-index="6"></div>
           <div class="facelet" data-index="7"></div>
         </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-R-r0"></div>
+          <div class="ctx-cell" id="ctx-R-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-R-b0"></div>
+          <div class="ctx-cell" id="ctx-R-b1"></div>
+        </div>
       </div>
-      <div class="face-wrap">
-        <div class="face-label">B</div>
+    </div>
+
+    <div class="face-section" id="face-section-B">
+      <div class="face-label">Back Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-B-t0"></div>
+          <div class="ctx-cell" id="ctx-B-t1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-B-l0"></div>
+          <div class="ctx-cell" id="ctx-B-l1"></div>
+        </div>
         <div class="face" id="face-B">
           <div class="facelet" data-index="20"></div>
           <div class="facelet" data-index="21"></div>
           <div class="facelet" data-index="22"></div>
           <div class="facelet" data-index="23"></div>
         </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-B-r0"></div>
+          <div class="ctx-cell" id="ctx-B-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-B-b0"></div>
+          <div class="ctx-cell" id="ctx-B-b1"></div>
+        </div>
       </div>
     </div>
 
-    <!-- D face (bottom) -->
-    <div class="face-row" id="row-bottom">
-      <div class="face-wrap">
-        <div class="face-label">D</div>
+    <div class="face-section" id="face-section-L">
+      <div class="face-label">Left Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-L-t0"></div>
+          <div class="ctx-cell" id="ctx-L-t1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-L-l0"></div>
+          <div class="ctx-cell" id="ctx-L-l1"></div>
+        </div>
+        <div class="face" id="face-L">
+          <div class="facelet" data-index="16"></div>
+          <div class="facelet" data-index="17"></div>
+          <div class="facelet" data-index="18"></div>
+          <div class="facelet" data-index="19"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-L-r0"></div>
+          <div class="ctx-cell" id="ctx-L-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-L-b0"></div>
+          <div class="ctx-cell" id="ctx-L-b1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="face-section" id="face-section-U">
+      <div class="face-label">Top Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-U-t0"></div>
+          <div class="ctx-cell" id="ctx-U-t1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-U-l0"></div>
+          <div class="ctx-cell" id="ctx-U-l1"></div>
+        </div>
+        <div class="face" id="face-U">
+          <div class="facelet" data-index="0"></div>
+          <div class="facelet" data-index="1"></div>
+          <div class="facelet" data-index="2"></div>
+          <div class="facelet" data-index="3"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-U-r0"></div>
+          <div class="ctx-cell" id="ctx-U-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-U-b0"></div>
+          <div class="ctx-cell" id="ctx-U-b1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="face-section" id="face-section-D">
+      <div class="face-label">Bottom Side</div>
+      <div class="face-ctx-wrap">
+        <div class="ctx-strip ctx-strip-h ctx-strip-top">
+          <div class="ctx-cell" id="ctx-D-t0"></div>
+          <div class="ctx-cell" id="ctx-D-t1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-left">
+          <div class="ctx-cell" id="ctx-D-l0"></div>
+          <div class="ctx-cell" id="ctx-D-l1"></div>
+        </div>
         <div class="face" id="face-D">
           <div class="facelet" data-index="12"></div>
           <div class="facelet" data-index="13"></div>
           <div class="facelet" data-index="14"></div>
           <div class="facelet" data-index="15"></div>
         </div>
+        <div class="ctx-strip ctx-strip-v ctx-strip-right">
+          <div class="ctx-cell" id="ctx-D-r0"></div>
+          <div class="ctx-cell" id="ctx-D-r1"></div>
+        </div>
+        <div class="ctx-strip ctx-strip-h ctx-strip-bot">
+          <div class="ctx-cell" id="ctx-D-b0"></div>
+          <div class="ctx-cell" id="ctx-D-b1"></div>
+        </div>
       </div>
+    </div>
+
+    <div class="face-section" id="face-section-SOL">
+      <div id="step-prefix">With the front facing you, rotate the:</div>
+      <div id="step-face-name"></div>
+      <div id="step-visual"></div>
+      <div id="step-instruction"></div>
     </div>
 
   </div>
 
-  <!-- A3: Color palette, solve button, status message -->
+  <div id="face-nav">
+    <button id="btn-face-prev" disabled>&#8592; Back</button>
+    <span id="face-indicator">Face 1 of 6 — Front Side</span>
+    <button id="btn-face-next">Next &#8594;</button>
+  </div>
+
   <div id="controls">
-
-    <div id="palette">
-      <!-- data-color matches color index: U=0 white, R=1 red, F=2 green, D=3 yellow, L=4 orange, B=5 blue -->
-      <button class="color-btn active" data-color="0" title="White (U)"></button>
-      <button class="color-btn" data-color="1" title="Red (R)"></button>
-      <button class="color-btn" data-color="2" title="Green (F)"></button>
-      <button class="color-btn" data-color="3" title="Yellow (D)"></button>
-      <button class="color-btn" data-color="4" title="Orange (L)"></button>
-      <button class="color-btn" data-color="5" title="Blue (B)"></button>
-    </div>
-    <div id="key-hint">Keys: W &nbsp;R &nbsp;G &nbsp;Y &nbsp;O &nbsp;B</div>
-
     <div id="color-counts">
-      <!-- color count badges, one per color; updated by JS -->
-      <span class="count-badge" data-color="0">W: 0/4</span>
-      <span class="count-badge" data-color="1">R: 0/4</span>
-      <span class="count-badge" data-color="2">G: 0/4</span>
-      <span class="count-badge" data-color="3">Y: 0/4</span>
-      <span class="count-badge" data-color="4">O: 0/4</span>
-      <span class="count-badge" data-color="5">B: 0/4</span>
+      <span class="count-badge" data-color="0">White: 0/4</span>
+      <span class="count-badge" data-color="1">Red: 0/4</span>
+      <span class="count-badge" data-color="2">Green: 0/4</span>
+      <span class="count-badge" data-color="3">Yellow: 0/4</span>
+      <span class="count-badge" data-color="4">Orange: 0/4</span>
+      <span class="count-badge" data-color="5">Blue: 0/4</span>
     </div>
 
     <div id="btn-row">
       <button id="reset-btn">Reset</button>
-      <button id="solve-btn" disabled>Solve</button>
     </div>
 
     <div id="status-msg"></div>
-
   </div>
 
-  <!-- A4: Solution display (hidden until solve runs) -->
-  <div id="solution-section" hidden>
+  <div id="solution-section" hidden style="display:none">
 
     <div id="solution-header">
       <span id="move-count"></span>
     </div>
 
-    <ol id="move-list"></ol>
+    <div id="step-display">
+      <div id="step-prefix">With the front facing you, rotate the:</div>
+      <div id="step-face-name"></div>
+      <div id="step-visual"></div>
+      <div id="step-instruction"></div>
+    </div>
 
     <div id="solution-nav">
       <button id="btn-prev" disabled>&#8592; Prev</button>
@@ -514,21 +649,42 @@
 
   </div>
 
-  <!-- Worker script: runs heavy table-building off the main thread -->
+  <!--
+    Worker script — solver table builder.
+
+    Generator moves are R, D, B.  These three face moves all leave the UFL corner
+    (position 1) unmoved, so UFL is the fixed reference corner that anchors the
+    coordinate system.  The user is told to hold the cube with the white logo at
+    front-top-left, which is exactly the UFL position.
+
+    Twist coordinate: encode co[0,2,3,4,5,6] (6 values, skip UFL=1, derive co[7]
+    from the sum-divisible-by-3 constraint).  Range 0–728.
+
+    Perm coordinate: Lehmer code over cp at positions [0,2,3,4,5,6,7] (7 values,
+    cp[1]=1 always fixed).  Range 0–5039.
+  -->
   <script id="solver-worker" type="javascript/worker">
     const URF = 0, UFL = 1, ULB = 2, UBR = 3;
     const DRB = 4, DFR = 5, DLF = 6, DBL = 7;
 
-    const cpU = [UBR, URF, UFL, ULB, DRB, DFR, DLF, DBL];
-    const coU = [  0,   0,   0,   0,   0,   0,   0,   0];
+    // R CW: cycles URF→UBR→DRB→DFR  (fixes UFL ✓)
     const cpR = [DFR, UFL, ULB, URF, UBR, DRB, DLF, DBL];
     const coR = [  2,   0,   0,   1,   2,   1,   0,   0];
-    const cpF = [UFL, DLF, ULB, UBR, DRB, URF, DFR, DBL];
-    const coF = [  1,   2,   0,   0,   0,   2,   1,   0];
+
+    // D CW: cycles DFR→DRB→DBL→DLF  (fixes all U corners including UFL ✓)
+    const cpD = [URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB];
+    const coD = [  0,   0,   0,   0,   0,   0,   0,   0];
+
+    // B CW: cycles UBR→ULB→DBL→DRB  (fixes UFL ✓)
+    const cpB = [URF, UFL, UBR, DRB, DBL, DFR, DLF, ULB];
+    const coB = [  0,   0,   1,   2,   1,   0,   0,   2];
 
     const ID_CP = [0, 1, 2, 3, 4, 5, 6, 7];
     const ID_CO = [0, 0, 0, 0, 0, 0, 0, 0];
-    const FACT   = [1, 1, 2, 6, 24, 120, 720, 5040];
+    const FACT  = [1, 1, 2, 6, 24, 120, 720, 5040];
+
+    // Positions encoded in the perm coordinate (all except UFL=1)
+    const PERM_POS = [0, 2, 3, 4, 5, 6, 7];
 
     function applyMove(cpA, coA, cpM, coM) {
       const cpOut = new Array(8), coOut = new Array(8);
@@ -541,51 +697,66 @@
 
     function buildMoves() {
       const moves = [];
-      for (const [cpBase, coBase] of [[cpU, coU], [cpR, coR], [cpF, coF]]) {
+      for (const [cpBase, coBase] of [[cpR, coR], [cpD, coD], [cpB, coB]]) {
         let cur = { cp: ID_CP.slice(), co: ID_CO.slice() };
         for (let pow = 0; pow < 3; pow++) {
           cur = applyMove(cur.cp, cur.co, cpBase, coBase);
           moves.push({ cp: cur.cp.slice(), co: cur.co.slice() });
         }
       }
-      return moves;
+      return moves;  // R R2 R'  D D2 D'  B B2 B'
     }
 
+    // Encode co[0,2,3,4,5,6] as base-3; skip position 1 (UFL fixed); derive co[7]
     function encodeTwist(co) {
       let twist = 0;
-      for (let i = 0; i < 6; i++) twist = twist * 3 + co[i];
+      for (let i = 0; i < 7; i++) {
+        if (i === 1) continue;
+        twist = twist * 3 + co[i];
+      }
       return twist;
     }
 
     function decodeTwist(twist, co) {
+      co[1] = 0;
       let t = twist, sum = 0;
-      for (let i = 5; i >= 0; i--) { co[i] = t % 3; sum += co[i]; t = Math.floor(t / 3); }
-      co[6] = (3 - (sum % 3)) % 3;
-      co[7] = 0;
+      // Decode in reverse order: positions 6,5,4,3,2,0
+      const order = [6, 5, 4, 3, 2, 0];
+      for (let j = 0; j < order.length; j++) {
+        co[order[j]] = t % 3;
+        sum += co[order[j]];
+        t = Math.floor(t / 3);
+      }
+      co[7] = (3 - (sum % 3)) % 3;
     }
 
+    // Lehmer code over PERM_POS positions (skips UFL=1, cp[1]=1 always)
     function encodePerm(cp) {
       let perm = 0;
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 6; i++) {
         let k = 0;
-        for (let j = i + 1; j < 7; j++) { if (cp[j] < cp[i]) k++; }
+        for (let j = i + 1; j < 7; j++) {
+          if (cp[PERM_POS[j]] < cp[PERM_POS[i]]) k++;
+        }
         perm += k * FACT[6 - i];
       }
       return perm;
     }
 
     function decodePerm(perm, cp) {
+      cp[1] = 1;
       const used = new Array(8).fill(false);
+      used[1] = true;
       let p = perm;
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 6; i++) {
         const fact = FACT[6 - i], k = Math.floor(p / fact);
         p = p % fact;
         let count = 0;
         for (let c = 0; c < 8; c++) {
-          if (!used[c]) { if (count === k) { cp[i] = c; used[c] = true; break; } count++; }
+          if (!used[c]) { if (count === k) { cp[PERM_POS[i]] = c; used[c] = true; break; } count++; }
         }
       }
-      cp[7] = used.indexOf(false);
+      for (let c = 0; c < 8; c++) { if (!used[c]) { cp[PERM_POS[6]] = c; break; } }
     }
 
     function buildTwistMove(MOVES) {
@@ -626,7 +797,6 @@
           }
         }
         depth++;
-        // Report progress after each BFS level (pruning table = 5%–100% of total)
         self.postMessage({ type: 'progress', pct: Math.round(5 + (filled / total) * 95) });
       }
       return table;
@@ -647,40 +817,26 @@
   </script>
 
   <script>
-    // -------------------------------------------------------------------------
-    // C1: Constants
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // CONSTANTS
+    // =========================================================================
 
-    // Corner indices (position 0–7)
     const URF = 0, UFL = 1, ULB = 2, UBR = 3;
     const DRB = 4, DFR = 5, DLF = 6, DBL = 7;
 
-    // Color indices
-    const U = 0, R = 1, F = 2, D = 3, L = 4, B = 5;
+    // Color indices: 0=White, 1=Red, 2=Green, 3=Yellow, 4=Orange, 5=Blue
+    const COLOR_CSS   = ['#ffffff', '#c41e3a', '#009b48', '#ffd500', '#ff5800', '#0051a2'];
+    const COLOR_NAMES = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
 
-    // CSS colors for each color index — used by painting logic
-    const COLOR_CSS = ['#ffffff', '#c41e3a', '#009b48', '#ffd500', '#ff5800', '#0051a2'];
+    // Face colors in the new orientation:
+    //   White logo on Front (F), Red on Top (U), Blue on Left (L)
+    //   → Green on Right (R), Orange on Bottom (D), Yellow on Back (B)
+    const U_COL = 1, R_COL = 2, F_COL = 0, D_COL = 4, L_COL = 5, B_COL = 3;
 
-    // Color label letters for the count badges
-    const COLOR_LABEL = ['W', 'R', 'G', 'Y', 'O', 'B'];
-
-    // Facelet index layout per corner position.
-    // Each entry is [facelet_a, facelet_b, facelet_c] corresponding to the
-    // three sticker positions of that corner, in order matching the co twist axes.
-    // Derived from the plan's facelet numbering (0-indexed):
-    //   U:0-3  R:4-7  F:8-11  D:12-15  L:16-19  B:20-23
-    // Corner → facelets (from defs / cubie.py):
-    //   URF: U4=3, R1=4, F2=9
-    //   UFL: U3=2, F1=8, L2=17
-    //   ULB: U1=0, L1=16, B2=21
-    //   UBR: U2=1, B1=20, R2=5
-    //   DRB: D4=15, R4=7, B3=22
-    //   DFR: D2=13, F4=11, R3=6
-    //   DLF: D1=12, L4=19, F3=10
-    //   DBL: D3=14, B4=23, L3=18
+    // Facelet indices for each corner position (physical layout — unchanged)
     const CORNER_FACELETS = [
       [ 3,  4,  9],  // URF: U4 R1 F2
-      [ 2,  8, 17],  // UFL: U3 F1 L2
+      [ 2,  8, 17],  // UFL: U3 F1 L2  ← logo corner (FIXED reference)
       [ 0, 16, 21],  // ULB: U1 L1 B2
       [ 1, 20,  5],  // UBR: U2 B1 R2
       [15,  7, 22],  // DRB: D4 R4 B3
@@ -689,46 +845,60 @@
       [14, 23, 18],  // DBL: D3 B4 L3
     ];
 
-    // Which color index belongs at each facelet of each corner when solved.
-    // Order matches CORNER_FACELETS: first facelet is U/D face, second and third
-    // are the two side faces, following the same axis order used in co twist.
+    // Solved-state sticker colors per corner
     const CORNER_COLORS = [
-      [U, R, F],  // URF
-      [U, F, L],  // UFL
-      [U, L, B],  // ULB
-      [U, B, R],  // UBR
-      [D, R, B],  // DRB
-      [D, F, R],  // DFR
-      [D, L, F],  // DLF
-      [D, B, L],  // DBL
+      [U_COL, R_COL, F_COL],  // URF: Red, Green, White
+      [U_COL, F_COL, L_COL],  // UFL: Red, White, Blue  ← logo corner
+      [U_COL, L_COL, B_COL],  // ULB: Red, Blue, Yellow
+      [U_COL, B_COL, R_COL],  // UBR: Red, Yellow, Green
+      [D_COL, R_COL, B_COL],  // DRB: Orange, Green, Yellow
+      [D_COL, F_COL, R_COL],  // DFR: Orange, White, Green
+      [D_COL, L_COL, F_COL],  // DLF: Orange, Blue, White
+      [D_COL, B_COL, L_COL],  // DBL: Orange, Yellow, Blue
     ];
 
-    // -------------------------------------------------------------------------
-    // C2: Base move definitions (from cubie.py)
-    // Each move is defined as cp (corner permutation) and co (corner orientation)
-    // describing where each corner goes and how its orientation changes.
-    // -------------------------------------------------------------------------
+    const LOGO_FACELET = 8;  // UFL–Front sticker, pre-filled White, locked
 
-    // U move: cycles URF→UBR→ULB→UFL, no orientation change
-    const cpU = [UBR, URF, UFL, ULB, DRB, DFR, DLF, DBL];
-    const coU = [  0,   0,   0,   0,   0,   0,   0,   0];
+    // Solution move labels — moves are R, D, B (face 0=R, 1=D, 2=B)
+    const MOVE_DESCS = [
+      'Clockwise 1 Turn',         // R CW
+      '2 Turns',                  // R 180°
+      'Counter-Clockwise 1 Turn', // R CCW
+      'Clockwise 1 Turn',         // D CW
+      '2 Turns',                  // D 180°
+      'Counter-Clockwise 1 Turn', // D CCW
+      'Clockwise 1 Turn',         // B CW
+      '2 Turns',                  // B 180°
+      'Counter-Clockwise 1 Turn', // B CCW
+    ];
 
-    // R move: cycles URF→DFR→DRB→UBR, orientation flips on affected corners
+    const FACE_NAMES = ['Right Side', 'Bottom Side', 'Back Side'];
+
+    // =========================================================================
+    // MOVE DEFINITIONS  (R, D, B — all leave UFL unmoved)
+    // =========================================================================
+
+    // R CW: cycles URF→UBR→DRB→DFR
     const cpR = [DFR, UFL, ULB, URF, UBR, DRB, DLF, DBL];
     const coR = [  2,   0,   0,   1,   2,   1,   0,   0];
 
-    // F move: cycles URF→UFL→DLF→DFR, orientation flips on affected corners
-    const cpF = [UFL, DLF, ULB, UBR, DRB, URF, DFR, DBL];
-    const coF = [  1,   2,   0,   0,   0,   2,   1,   0];
+    // D CW: cycles DFR→DRB→DBL→DLF
+    const cpD = [URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB];
+    const coD = [  0,   0,   0,   0,   0,   0,   0,   0];
 
-    // -------------------------------------------------------------------------
-    // D1: applyMove — multiply two CubieCubes (port of CubieCube.multiply in cubie.py)
-    // Returns a new {cp, co} representing the cube state after applying move M
-    // to state A.  Formula: result[i] = A[ M[i] ] for cp; co adds mod 3.
-    // -------------------------------------------------------------------------
+    // B CW: cycles UBR→ULB→DBL→DRB
+    const cpB = [URF, UFL, UBR, DRB, DBL, DFR, DLF, ULB];
+    const coB = [  0,   0,   1,   2,   1,   0,   0,   2];
+
+    const ID_CP = [0, 1, 2, 3, 4, 5, 6, 7];
+    const ID_CO = [0, 0, 0, 0, 0, 0, 0, 0];
+    const FACT  = [1, 1, 2, 6, 24, 120, 720, 5040];
+
+    // Positions in the perm coordinate (all except UFL=position 1)
+    const PERM_POS = [0, 2, 3, 4, 5, 6, 7];
+
     function applyMove(cpA, coA, cpM, coM) {
-      const cpOut = new Array(8);
-      const coOut = new Array(8);
+      const cpOut = new Array(8), coOut = new Array(8);
       for (let i = 0; i < 8; i++) {
         cpOut[i] = cpA[cpM[i]];
         coOut[i] = (coA[cpM[i]] + coM[i]) % 3;
@@ -736,218 +906,105 @@
       return { cp: cpOut, co: coOut };
     }
 
-    // -------------------------------------------------------------------------
-    // D2: All 9 moves — U, U2, U', R, R2, R', F, F2, F'
-    // Generated by composing each base move 1×, 2×, 3× with applyMove.
-    // MOVES[i] = {cp, co} for move index i (matches solver move order).
-    // -------------------------------------------------------------------------
-    const MOVE_DESCS = [
-      "Top Clockwise 90°", "Top 180°", "Top Counter-clockwise 90°",
-      "Right Clockwise 90°", "Right 180°", "Right Counter-clockwise 90°",
-      "Front Clockwise 90°", "Front 180°", "Front Counter-clockwise 90°",
-    ];
-
-    // Solved state as starting point for composition
-    const ID_CP = [0, 1, 2, 3, 4, 5, 6, 7];
-    const ID_CO = [0, 0, 0, 0, 0, 0, 0, 0];
-
     function buildMoves() {
       const moves = [];
-      for (const [cpBase, coBase] of [[cpU, coU], [cpR, coR], [cpF, coF]]) {
+      for (const [cpBase, coBase] of [[cpR, coR], [cpD, coD], [cpB, coB]]) {
         let cur = { cp: ID_CP.slice(), co: ID_CO.slice() };
-        for (let pow = 0; pow < 3; pow++) {          // 1×, 2×, 3×
+        for (let pow = 0; pow < 3; pow++) {
           cur = applyMove(cur.cp, cur.co, cpBase, coBase);
           moves.push({ cp: cur.cp.slice(), co: cur.co.slice() });
         }
       }
-      return moves;  // length 9: U U2 U' R R2 R' F F2 F'
+      return moves;
     }
 
     const MOVES = buildMoves();
 
-    // -------------------------------------------------------------------------
-    // D3: faceletsToCubie — convert painted 24-element facelets array to {cp, co}
-    // For each corner position, identify which cubie is sitting there by matching
-    // its three sticker colors to CORNER_COLORS, then compute its orientation.
-    // -------------------------------------------------------------------------
-    function faceletsToCubie(facelets) {
-      const cp = new Array(8);
-      const co = new Array(8);
+    // =========================================================================
+    // COORDINATE ENCODING / DECODING  (UFL fixed at position 1)
+    // =========================================================================
 
-      for (let pos = 0; pos < 8; pos++) {
-        // Read the three sticker colors at this corner position
-        const stickers = CORNER_FACELETS[pos].map(fi => facelets[fi]);
-
-        // Find which cubie belongs here by matching the set of colors
-        let cubie = -1;
-        for (let c = 0; c < 8; c++) {
-          if (CORNER_COLORS[c].every(col => stickers.includes(col))) {
-            cubie = c;
-            break;
-          }
-        }
-        cp[pos] = cubie;
-
-        // Determine orientation: which rotation brings the U/D sticker to the
-        // U/D facelet of this position (index 0 in CORNER_FACELETS[pos]).
-        // The U/D color of the cubie is CORNER_COLORS[cubie][0].
-        const udColor = CORNER_COLORS[cubie][0];
-        co[pos] = stickers.indexOf(udColor); // 0, 1, or 2
-      }
-
-      return { cp, co };
-    }
-
-    // -------------------------------------------------------------------------
-    // E1: Twist coordinate — encode/decode orientation of 7 free corners (DBL fixed)
-    // Treats co[0..6] as a base-3 number → range 0..728 (3^6 = 729 states).
-    // co[7] is always derivable (sum of all 8 must be divisible by 3).
-    // -------------------------------------------------------------------------
+    // Twist: encode co[0,2,3,4,5,6] (skip position 1); derive co[7] from sum
     function encodeTwist(co) {
       let twist = 0;
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 7; i++) {
+        if (i === 1) continue;
         twist = twist * 3 + co[i];
       }
-      return twist;  // 0..728
+      return twist;
     }
 
     function decodeTwist(twist, co) {
-      let t = twist;
-      let sum = 0;
-      for (let i = 5; i >= 0; i--) {
-        co[i] = t % 3;
-        sum += co[i];
+      co[1] = 0;
+      let t = twist, sum = 0;
+      const order = [6, 5, 4, 3, 2, 0];
+      for (let j = 0; j < order.length; j++) {
+        co[order[j]] = t % 3;
+        sum += co[order[j]];
         t = Math.floor(t / 3);
       }
-      // co[6] is determined by the sum constraint; co[7] (DBL) is always 0
-      co[6] = (3 - (sum % 3)) % 3;
-      co[7] = 0;
+      co[7] = (3 - (sum % 3)) % 3;
     }
 
-    // -------------------------------------------------------------------------
-    // E2: Perm coordinate — encode/decode permutation of 7 free corners (DBL fixed)
-    // Uses the Lehmer code (factorial number system) over cp[0..6] → 0..5039 (7!).
-    // cp[7] is always DBL=7 when the other 7 are placed, so it is ignored.
-    // -------------------------------------------------------------------------
-
-    // Factorials for Lehmer encoding
-    const FACT = [1, 1, 2, 6, 24, 120, 720, 5040];
-
+    // Perm: Lehmer code over PERM_POS; cp[1]=1 always
     function encodePerm(cp) {
       let perm = 0;
-      for (let i = 0; i < 7; i++) {
-        // Count how many values cp[i+1..6] are less than cp[i]
+      for (let i = 0; i < 6; i++) {
         let k = 0;
         for (let j = i + 1; j < 7; j++) {
-          if (cp[j] < cp[i]) k++;
+          if (cp[PERM_POS[j]] < cp[PERM_POS[i]]) k++;
         }
         perm += k * FACT[6 - i];
       }
-      return perm;  // 0..5039
+      return perm;
     }
 
     function decodePerm(perm, cp) {
+      cp[1] = 1;
       const used = new Array(8).fill(false);
+      used[1] = true;
       let p = perm;
-      for (let i = 0; i < 7; i++) {
-        const fact = FACT[6 - i];
-        const k = Math.floor(p / fact);
+      for (let i = 0; i < 6; i++) {
+        const fact = FACT[6 - i], k = Math.floor(p / fact);
         p = p % fact;
-        // Pick the (k+1)-th unused cubie
         let count = 0;
         for (let c = 0; c < 8; c++) {
-          if (!used[c]) {
-            if (count === k) { cp[i] = c; used[c] = true; break; }
-            count++;
-          }
+          if (!used[c]) { if (count === k) { cp[PERM_POS[i]] = c; used[c] = true; break; } count++; }
         }
       }
-      // Last free corner fills cp[7]
-      cp[7] = used.indexOf(false);
+      for (let c = 0; c < 8; c++) { if (!used[c]) { cp[PERM_POS[6]] = c; break; } }
     }
 
-    // -------------------------------------------------------------------------
-    // F1: buildTwistMove — precompute new twist coordinate for every (twist, move)
-    // twistMove[twist * 9 + move] = resulting twist after applying move to a
-    // cube with that twist coordinate (perm irrelevant for this table).
-    // Size: 729 × 9 = 6561 entries, stored as Uint16Array.
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // MOVE TABLES  (main-thread copies — used by GAS version; worker builds its own)
+    // =========================================================================
+
     function buildTwistMove() {
       const table = new Uint16Array(729 * 9);
-      const co = new Array(8);
-      const cp = [0, 1, 2, 3, 4, 5, 6, 7];  // perm doesn't matter here
-
+      const co = new Array(8), cp = [0, 1, 2, 3, 4, 5, 6, 7];
       for (let twist = 0; twist < 729; twist++) {
         decodeTwist(twist, co);
-        for (let m = 0; m < 9; m++) {
-          const res = applyMove(cp, co, MOVES[m].cp, MOVES[m].co);
-          table[twist * 9 + m] = encodeTwist(res.co);
-        }
+        for (let m = 0; m < 9; m++)
+          table[twist * 9 + m] = encodeTwist(applyMove(cp, co, MOVES[m].cp, MOVES[m].co).co);
       }
       return table;
     }
 
-    // -------------------------------------------------------------------------
-    // F2: buildPermMove — precompute new perm coordinate for every (perm, move)
-    // permMove[perm * 9 + move] = resulting perm after applying move to a cube
-    // with that perm coordinate (twist irrelevant for this table).
-    // Size: 5040 × 9 = 45360 entries, stored as Uint16Array.
-    // -------------------------------------------------------------------------
     function buildPermMove() {
       const table = new Uint16Array(5040 * 9);
-      const cp = new Array(8);
-      const co = [0, 0, 0, 0, 0, 0, 0, 0];  // twist doesn't matter here
-
+      const cp = new Array(8), co = [0, 0, 0, 0, 0, 0, 0, 0];
       for (let perm = 0; perm < 5040; perm++) {
         decodePerm(perm, cp);
-        for (let m = 0; m < 9; m++) {
-          const res = applyMove(cp, co, MOVES[m].cp, MOVES[m].co);
-          table[perm * 9 + m] = encodePerm(res.cp);
-        }
+        for (let m = 0; m < 9; m++)
+          table[perm * 9 + m] = encodePerm(applyMove(cp, co, MOVES[m].cp, MOVES[m].co).cp);
       }
       return table;
     }
 
-    // -------------------------------------------------------------------------
-    // G1: buildPruningTable — BFS from solved state over all (perm, twist) pairs
-    // cornerDepth[perm * 729 + twist] = minimum moves to solve that state.
-    // Initialised to 255 (unvisited); solved state (0,0) = 0.
-    // Size: 5040 × 729 = 3,674,160 entries as Uint8Array (~3.7 MB).
-    // Requires twistMove and permMove to already be built.
-    // -------------------------------------------------------------------------
-    function buildPruningTable(twistMove, permMove) {
-      const table = new Uint8Array(5040 * 729).fill(255);
-      table[0] = 0;  // solved state: perm=0, twist=0, depth=0
+    // =========================================================================
+    // SOLVER INIT — Web Worker builds tables off the main thread
+    // =========================================================================
 
-      let depth = 0;
-      let filled = 1;
-      const total = 5040 * 729;
-
-      while (filled < total) {
-        for (let perm = 0; perm < 5040; perm++) {
-          for (let twist = 0; twist < 729; twist++) {
-            if (table[perm * 729 + twist] !== depth) continue;
-            for (let m = 0; m < 9; m++) {
-              const newTwist = twistMove[twist * 9 + m];
-              const newPerm  = permMove[perm * 9 + m];
-              const idx = newPerm * 729 + newTwist;
-              if (table[idx] === 255) {
-                table[idx] = depth + 1;
-                filled++;
-              }
-            }
-          }
-        }
-        depth++;
-      }
-
-      return table;
-    }
-
-    // -------------------------------------------------------------------------
-    // G2: Initialise all tables on page load; show status message while building.
-    // Uses setTimeout to yield to the browser so the message renders first.
-    // -------------------------------------------------------------------------
     let twistMove, permMove, pruningTable;
     let solverReady = false;
 
@@ -956,7 +1013,6 @@
       status.style.color = '#90caf9';
       status.textContent = 'Initializing solver…';
 
-      // Run heavy table-building in a Web Worker so the UI stays responsive
       const blob = new Blob(
         [document.getElementById('solver-worker').textContent],
         { type: 'application/javascript' }
@@ -969,7 +1025,6 @@
           status.textContent = `Initializing solver… ${e.data.pct}%`;
           return;
         }
-        // type === 'done'
         twistMove    = e.data.twistMove;
         permMove     = e.data.permMove;
         pruningTable = e.data.pruningTable;
@@ -984,30 +1039,18 @@
       worker.postMessage('start');
     }
 
-    // Placeholder — will be implemented in I2
-    function updateSolveButton() {}
+    // =========================================================================
+    // IDA* SEARCH
+    // =========================================================================
 
-    // -------------------------------------------------------------------------
-    // H1: IDA* search — recursive depth-first search with pruning
-    // Returns true and populates `moves` array when solution is found.
-    // Prunes branches where pruning table says distance > remaining depth.
-    // Skips consecutive moves on the same face (redundant).
-    // Face of move m: 0=U, 1=R, 2=F  (every 3 moves share a face)
-    // -------------------------------------------------------------------------
     function search(twist, perm, depth, lastFace, moves) {
-      // Pruning: if lower bound from table exceeds remaining depth, cut off
       if (pruningTable[perm * 729 + twist] > depth) return false;
-
-      // Solution found
       if (depth === 0) return twist === 0 && perm === 0;
-
       for (let m = 0; m < 9; m++) {
-        const face = Math.floor(m / 3);  // 0=U, 1=R, 2=F
-        if (face === lastFace) continue; // skip same-face consecutive moves
-
+        const face = Math.floor(m / 3);
+        if (face === lastFace) continue;
         const newTwist = twistMove[twist * 9 + m];
         const newPerm  = permMove[perm  * 9 + m];
-
         moves.push(m);
         if (search(newTwist, newPerm, depth - 1, face, moves)) return true;
         moves.pop();
@@ -1015,150 +1058,236 @@
       return false;
     }
 
-    // -------------------------------------------------------------------------
-    // H2: solve — IDA* outer loop; iterates maxDepth from 0 upward.
-    // Returns array of move indices, or null if no solution found (bad state).
-    // -------------------------------------------------------------------------
     function solve(cp, co) {
-      const twist = encodeTwist(co);
-      const perm  = encodePerm(cp);
-
-      // Already solved
+      const twist = encodeTwist(co), perm = encodePerm(cp);
       if (twist === 0 && perm === 0) return [];
-
       const moves = [];
       for (let maxDepth = 1; maxDepth <= 20; maxDepth++) {
         if (search(twist, perm, maxDepth, -1, moves)) return moves;
       }
-      return null;  // should never happen for a valid 2×2 state
+      return null;
     }
 
-    window.addEventListener('load', initSolver);
+    // =========================================================================
+    // FACELET ↔ CUBIE CONVERSION
+    // =========================================================================
 
-    // -------------------------------------------------------------------------
-    // I1: Painting logic — track active color, handle facelet clicks
-    // -------------------------------------------------------------------------
+    function faceletsToCubie(facelets) {
+      const cp = new Array(8), co = new Array(8);
+      for (let pos = 0; pos < 8; pos++) {
+        const stickers = CORNER_FACELETS[pos].map(fi => facelets[fi]);
+        let cubie = -1;
+        for (let c = 0; c < 8; c++) {
+          if (CORNER_COLORS[c].every(col => stickers.includes(col))) { cubie = c; break; }
+        }
+        cp[pos] = cubie;
+        if (cubie === -1) { co[pos] = 0; continue; }
+        co[pos] = stickers.indexOf(CORNER_COLORS[cubie][0]);
+      }
+      return { cp, co };
+    }
 
-    // facelets[i] = color index (0–5), or -1 if unpainted
+    function cubieToFacelets(cp, co) {
+      const out = new Array(24);
+      for (let pos = 0; pos < 8; pos++) {
+        const cubie = cp[pos], orientation = co[pos];
+        const slots = CORNER_FACELETS[pos], colors = CORNER_COLORS[cubie];
+        for (let k = 0; k < 3; k++) out[slots[k]] = colors[(k - orientation + 3) % 3];
+      }
+      return out;
+    }
+
+    // =========================================================================
+    // PAINTING — click-to-cycle; logo facelet locked
+    // =========================================================================
+
     const facelets = new Array(24).fill(-1);
-    let activeColor = 0;
 
-    // Set active color when a palette button is clicked
-    document.querySelectorAll('.color-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeColor = parseInt(btn.dataset.color);
-        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-      });
-    });
+    function initLogoFacelet() {
+      facelets[LOGO_FACELET] = 0;
+      const cell = document.querySelector(`[data-index="${LOGO_FACELET}"]`);
+      const img  = document.createElement('img');
+      img.src = 'data:image/jpeg;base64,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dZb2dvMuJFHGeyj2H+NdLXQdQUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQByXxC8LnxL4db7MgOo2ZM1qf7xx8yfRhx9cV8nyvP4Y8RW+o2YIj3eYinjjoyH9RX27Xg3xb+HbrcXOqWkLNp1y/myGJcm1l7sR/cbqfQk+1Fr6A1cksbqLVbGC9sj5kE67lI6j1B9x0rF13xpo3h/fEz/br5elvC3yqf9tug+gya8xh03X7RJLeyuZBbyfe8m42o31Ga2PDHw+vtbvRDFbtezA/NHCcRp7u/QfSuVYWKd2cscLFO7M7Utb8QeNZ9sj7bVDkQp8kMf19T7nJr0v4V/Daa8uorueN/wCzUdZJZ3XaLgr0RB3XPU16J4V+EunaVHFNrIivJ0wUtkXFvEfp/Gfc/lXoyqEUKoAUDAAHAFdKSSsjpSSVkLRRRTGFFFFAEcsENwmyaJJF9HUEfrSxQxQJsijSNR/CigCn0UAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABQQCMEZBoooAwrnwZ4avJzNPodg8hOS3kgZ+uK1rOytNPtxb2VtDbwjpHCgVfyFT0UAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRXEXfxR0SzvZ7WS11AvDI0bFY0wSDg4+f2ooA//2Q==';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:3px;display:block;pointer-events:none;';
+      cell.appendChild(img);
+      updateCounts();
+    }
 
-    // Paint a facelet on click; also make facelets keyboard-focusable (N1)
     document.querySelectorAll('.facelet').forEach(cell => {
-      cell.tabIndex = 0;
       cell.addEventListener('click', () => {
         const idx = parseInt(cell.dataset.index);
-        facelets[idx] = activeColor;
-        cell.style.background = COLOR_CSS[activeColor];
-        cell.style.borderColor = COLOR_CSS[activeColor];
+        if (idx === LOGO_FACELET) return;
+        const cur  = facelets[idx];
+        const next = cur === -1 ? 0 : (cur + 1) % 6;
+        facelets[idx] = next;
+        cell.style.background  = COLOR_CSS[next];
+        cell.style.borderColor = COLOR_CSS[next];
         updateCounts();
       });
     });
 
-    // -------------------------------------------------------------------------
-    // I2: Color count display + Solve button enable/disable
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // COLOR COUNTS + SOLVE BUTTON
+    // =========================================================================
 
     function updateCounts() {
-      // Tally each color
       const counts = new Array(6).fill(0);
-      for (const c of facelets) {
-        if (c !== -1) counts[c]++;
-      }
-
-      // Update badge text and .complete class
+      for (const c of facelets) { if (c !== -1) counts[c]++; }
       document.querySelectorAll('.count-badge').forEach(badge => {
         const color = parseInt(badge.dataset.color);
         const n = counts[color];
-        badge.textContent = COLOR_LABEL[color] + ': ' + n + '/4';
+        badge.textContent = COLOR_NAMES[color] + ': ' + n + '/4';
         badge.classList.toggle('complete', n === 4);
       });
-
-      updateSolveButton(counts);
+      updateSolveButton();
+      updateContextBorders();
     }
 
-    // Override the placeholder from G2
-    function updateSolveButton(counts) {
-      if (!counts) {
-        // Called from initSolver before any painting — recompute
-        const c = new Array(6).fill(0);
-        for (const col of facelets) { if (col !== -1) c[col]++; }
-        counts = c;
+    // Neighbor facelet indices for context border strips — all 6 faces.
+    // For each face: t=top strip [left,right], b=bot strip [left,right],
+    // l=left strip [top,bot], r=right strip [top,bot]
+    const F_CTX = { t:[2,3],   b:[12,13], l:[17,19], r:[4,6]   };
+    const R_CTX = { t:[3,1],   b:[13,15], l:[9,11],  r:[20,22]  };
+    const B_CTX = { t:[1,0],   b:[15,14], l:[5,7],   r:[16,18]  };
+    const L_CTX = { t:[0,2],   b:[14,12], l:[21,23], r:[8,10]   };
+    const U_CTX = { t:[21,20], b:[8,9],   l:[16,17], r:[5,4]    };
+    const D_CTX = { t:[10,11], b:[23,22], l:[19,18], r:[6,7]    };
+
+    function updateContextBorders() {
+      const set = (id, fi) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const col = facelets[fi];
+        el.style.background = col === -1 ? '' : COLOR_CSS[col];
+      };
+      for (const [face, ctx] of [['F',F_CTX],['R',R_CTX],['B',B_CTX],['L',L_CTX],['U',U_CTX],['D',D_CTX]]) {
+        set(`ctx-${face}-t0`, ctx.t[0]); set(`ctx-${face}-t1`, ctx.t[1]);
+        set(`ctx-${face}-b0`, ctx.b[0]); set(`ctx-${face}-b1`, ctx.b[1]);
+        set(`ctx-${face}-l0`, ctx.l[0]); set(`ctx-${face}-l1`, ctx.l[1]);
+        set(`ctx-${face}-r0`, ctx.r[0]); set(`ctx-${face}-r1`, ctx.r[1]);
       }
-      const allPainted = facelets.every(c => c !== -1);
-      const allValid   = counts.every(n => n === 4);
-      document.getElementById('solve-btn').disabled = !(solverReady && allPainted && allValid);
     }
 
-    // -------------------------------------------------------------------------
-    // J1: validateFacelets — check exactly 4 of each color
-    // Returns null on success, or an error string.
-    // -------------------------------------------------------------------------
+    function updateSolveButton() {
+      // Solve is triggered via the face-nav button; update its enabled state
+      const allPainted = facelets.every(c => c !== -1);
+      const counts = new Array(6).fill(0);
+      for (const col of facelets) { if (col !== -1) counts[col]++; }
+      const allValid = counts.every(n => n === 4);
+      const btn = document.getElementById('btn-face-next');
+      if (currentFaceIdx === 5) {
+        btn.disabled = !(solverReady && allPainted && allValid);
+      }
+    }
+
+    // =========================================================================
+    // VALIDATION
+    // =========================================================================
+
     function validateFacelets(facelets) {
       const counts = new Array(6).fill(0);
       for (const c of facelets) counts[c]++;
-      const names = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
       for (let c = 0; c < 6; c++) {
-        if (counts[c] !== 4) {
-          return `${names[c]} appears ${counts[c]} time${counts[c] === 1 ? '' : 's'} (need exactly 4).`;
-        }
+        if (counts[c] !== 4)
+          return `${COLOR_NAMES[c]} appears ${counts[c]} time${counts[c] === 1 ? '' : 's'} (need exactly 4).`;
       }
       return null;
     }
 
-    // -------------------------------------------------------------------------
-    // J2: validateCubie — check orientation sum and all 8 cubies present
-    // Returns null on success, or an error string.
-    // -------------------------------------------------------------------------
     function validateCubie(cp, co) {
-      // All 8 cubies must appear exactly once
+      // All 8 cubies must be present exactly once
       const seen = new Array(8).fill(false);
       for (let i = 0; i < 8; i++) {
-        if (cp[i] < 0 || cp[i] > 7 || seen[cp[i]]) {
+        if (cp[i] < 0 || cp[i] > 7 || seen[cp[i]])
           return 'Invalid corner combination — check that each corner cubie appears exactly once.';
-        }
         seen[cp[i]] = true;
       }
 
-      // DBL corner (position 7) must be the yellow-blue-orange cubie in the correct orientation.
-      // The solver fixes this corner as its reference point and only uses U, R, F moves.
-      if (cp[7] !== 7) {
-        return 'The yellow-blue-orange corner is not at the bottom-back-left position. ' +
-               'Rotate the whole cube until that corner is at the bottom-back-left, then re-enter the colors.';
-      }
-      if (co[7] !== 0) {
-        return 'The bottom-back-left corner is twisted. ' +
-               'Make sure its yellow sticker faces down, blue faces back, and orange faces left.';
-      }
+      // UFL (position 1) must be the white-red-blue cubie, correctly oriented
+      if (cp[1] !== 1)
+        return 'The white logo corner does not appear to be at the front top left. ' +
+               'Please check your color entry and try again.';
+      if (co[1] !== 0)
+        return 'The front top left corner looks twisted. ' +
+               'Make sure white faces front, red faces top, and blue faces left.';
 
-      // Sum of all orientations must be divisible by 3
-      const twistSum = co.reduce((a, b) => a + b, 0);
-      if (twistSum % 3 !== 0) {
-        return 'Invalid corner orientation — one or more corners may be twisted incorrectly.';
-      }
+      if (co.reduce((a, b) => a + b, 0) % 3 !== 0)
+        return 'Invalid corner orientation — one or more corners may be incorrectly entered.';
 
       return null;
     }
 
-    // -------------------------------------------------------------------------
-    // J3: Wire Solve button — validate → convert → solve → display or show error
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // SOLVE BUTTON
+    // =========================================================================
+
     function setStatus(msg, isError = true) {
       const el = document.getElementById('status-msg');
       el.textContent = msg;
       el.style.color = isError ? '#ff8080' : '#90caf9';
     }
 
-    document.getElementById('solve-btn').addEventListener('click', () => {
+    // =========================================================================
+    // FACE CAROUSEL
+    // =========================================================================
+
+    const FACE_ORDER  = ['F', 'R', 'B', 'L', 'U', 'D'];
+    const FACE_LABELS = ['Front Side', 'Right Side', 'Back Side', 'Left Side', 'Top Side', 'Bottom Side'];
+    const FACE_INSTRUCTIONS = [
+      '<strong>Before you start:</strong> Hold the cube so the white logo faces you in the upper-left corner. Fill in the <strong>Front Side</strong> — the logo square is already locked in.',
+      'Rotate the cube to see the <strong>Right Side</strong> and tap each square to match its color.',
+      'Fill in the <strong>Back Side</strong> — the face opposite the white logo.',
+      'Fill in the <strong>Left Side</strong>.',
+      'Fill in the <strong>Top Side</strong>.',
+      'Fill in the <strong>Bottom Side</strong>, then tap <strong>Solve</strong> when you\'re ready.',
+    ];
+    let currentFaceIdx = 0;
+    let appMode = 'input'; // 'input' | 'solution'
+
+    function showFace(idx) {
+      currentFaceIdx = idx;
+      FACE_ORDER.forEach(f => {
+        document.getElementById(`face-section-${f}`).classList.remove('active');
+      });
+      document.getElementById(`face-section-${FACE_ORDER[idx]}`).classList.add('active');
+      document.getElementById('face-indicator').textContent =
+        `Face ${idx + 1} of 6 \u2014 ${FACE_LABELS[idx]}`;
+      document.getElementById('instructions').innerHTML = FACE_INSTRUCTIONS[idx];
+      document.getElementById('btn-face-prev').disabled = idx === 0;
+      const nextBtn = document.getElementById('btn-face-next');
+      if (idx === 5) {
+        nextBtn.textContent = 'Solve';
+        nextBtn.classList.add('solve-mode');
+        updateSolveButton();
+      } else {
+        nextBtn.textContent = 'Next \u2192';
+        nextBtn.classList.remove('solve-mode');
+        nextBtn.disabled = false;
+      }
+    }
+
+    document.getElementById('btn-face-prev').addEventListener('click', () => {
+      if (appMode === 'solution') {
+        if (currentStep > 0) highlightStep(currentStep - 1);
+      } else {
+        if (currentFaceIdx > 0) showFace(currentFaceIdx - 1);
+      }
+    });
+
+    document.getElementById('btn-face-next').addEventListener('click', () => {
+      if (appMode === 'solution') {
+        if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
+      } else {
+        if (currentFaceIdx < 5) showFace(currentFaceIdx + 1);
+        else triggerSolve();
+      }
+    });
+
+    // =========================================================================
+    // SOLVE
+    // =========================================================================
+
+    function triggerSolve() {
       setStatus('');
       document.getElementById('solution-section').hidden = true;
 
@@ -1174,184 +1303,160 @@
       if (moves === null) { setStatus('No solution found — please check your cube state.'); return; }
 
       renderSolution(moves);
-    });
-
-    // -------------------------------------------------------------------------
-    // K1: renderSolution — populate move list, show move count, reveal section
-    // -------------------------------------------------------------------------
-    let currentStep = -1;
-    let totalSteps  = 0;
-
-    // -------------------------------------------------------------------------
-    // K0: createMoveSVG — SVG diagram for a move (face grid + rotation arrow)
-    // -------------------------------------------------------------------------
-
-    // Inverse of faceletsToCubie: reconstruct the 24-element color array from cp/co.
-    // For corner position pos, the cubie's colors rotate by its orientation:
-    //   facelet slot k  →  CORNER_COLORS[cubie][(k − orientation + 3) % 3]
-    function cubieToFacelets(cp, co) {
-      const out = new Array(24);
-      for (let pos = 0; pos < 8; pos++) {
-        const cubie       = cp[pos];
-        const orientation = co[pos];
-        const slots       = CORNER_FACELETS[pos];
-        const colors      = CORNER_COLORS[cubie];
-        for (let k = 0; k < 3; k++) {
-          out[slots[k]] = colors[(k - orientation + 3) % 3];
-        }
-      }
-      return out;
     }
 
-    // Mini cube-net SVG (cross layout U/L/F/R/B/D) from a 24-element color array.
-    // Cell size 8px, 1px gap. viewBox 72×54, rendered at 108×81.
-    function createMiniNet(faceletColors) {
-      const C = 8, S = C + 1;
-      // [ox, oy, base facelet index]
-      const faces = [
-        [18,  0,  0],   // U
-        [ 0, 18, 16],   // L
-        [18, 18,  8],   // F
-        [36, 18,  4],   // R
-        [54, 18, 20],   // B
-        [18, 36, 12],   // D
+    // =========================================================================
+    // SOLUTION DISPLAY — single step at a time
+    // =========================================================================
+
+    let currentStep   = -1;
+    let totalSteps    = 0;
+    let solutionMoves = [];
+    let snapshots     = [];
+
+    // Large step SVG: 2×2 face grid + edge strips + mini Front icon + arrow (234×234 viewBox)
+    // face index: 0=R (facelets 4-7), 1=D (facelets 12-15), 2=B (facelets 20-23)
+    function createStepSVG(m, faceletColors) {
+      const face  = Math.floor(m / 3);
+      const power = m % 3;              // 0=CW, 1=180°, 2=CCW
+
+      const base = [4, 12, 20][face];  // R→4, D→12, B→20
+      const c = [0, 1, 2, 3].map(k => COLOR_CSS[faceletColors[base + k]]);
+      const aw = '#ffffff';
+
+      // Neighboring sticker facelets on each edge of the rotated face.
+      // t=top[TL,TR], b=bottom[BL,BR], l=left[top,bot], r=right[top,bot]
+      const EDGE_IDX = [
+        { t:[3,1],   b:[13,15], l:[9,11],  r:[20,22] },  // R: top=U, bot=D, left=F, right=B
+        { t:[10,11], b:[23,22], l:[19,18], r:[6,7]   },  // D: top=F, bot=B, left=L, right=R
+        { t:[1,0],   b:[15,14], l:[5,7],   r:[16,18] },  // B: top=U, bot=D, left=R, right=L
       ];
-      let rects = '';
-      for (const [ox, oy, base] of faces) {
-        for (let r = 0; r < 2; r++) {
-          for (let c = 0; c < 2; c++) {
-            const color = COLOR_CSS[faceletColors[base + r * 2 + c]];
-            rects += `<rect x="${ox + c * S}" y="${oy + r * S}" width="${C}" height="${C}" fill="${color}" rx="1"/>`;
-          }
-        }
-      }
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 72 54');
-      svg.setAttribute('width',  '108');
-      svg.setAttribute('height', '81');
-      svg.setAttribute('aria-hidden', 'true');
-      svg.innerHTML = rects;
-      return svg;
-    }
+      const ei = EDGE_IDX[face];
+      const et = ei.t.map(i => COLOR_CSS[faceletColors[i]]);
+      const eb = ei.b.map(i => COLOR_CSS[faceletColors[i]]);
+      const el = ei.l.map(i => COLOR_CSS[faceletColors[i]]);
+      const er = ei.r.map(i => COLOR_CSS[faceletColors[i]]);
 
-    function createMoveSVG(m, faceletColors) {
-      const face  = Math.floor(m / 3);  // 0=U, 1=R, 2=F
-      const power = m % 3;              // 0=CW quarter, 1=half turn, 2=CCW quarter
+      // Thin colored strips just outside the face grid (4px gap, 9px thick)
+      const edgeStrips =
+        `<rect x="72"  y="59"  width="42" height="9" rx="2" fill="${et[0]}"/>` +
+        `<rect x="120" y="59"  width="42" height="9" rx="2" fill="${et[1]}"/>` +
+        `<rect x="72"  y="166" width="42" height="9" rx="2" fill="${eb[0]}"/>` +
+        `<rect x="120" y="166" width="42" height="9" rx="2" fill="${eb[1]}"/>` +
+        `<rect x="59"  y="72"  width="9" height="42" rx="2" fill="${el[0]}"/>` +
+        `<rect x="59"  y="120" width="9" height="42" rx="2" fill="${el[1]}"/>` +
+        `<rect x="166" y="72"  width="9" height="42" rx="2" fill="${er[0]}"/>` +
+        `<rect x="166" y="120" width="9" height="42" rx="2" fill="${er[1]}"/>`;
 
-      // Real sticker colors for the 4 cells of the affected face
-      const base = [0, 4, 8][face];
-      const c = [0,1,2,3].map(k => COLOR_CSS[faceletColors[base + k]]);
+      // Rotation angle: 90° CW, 180°, or -90° CCW around face centre (117,117)
+      const deg = power === 0 ? 90 : power === 2 ? -90 : 180;
+      const aVals = `0 117 117; 0 117 117; ${deg} 117 117; ${deg} 117 117; 0 117 117`;
 
-      const arrowColor = '#ffffff';
-
-      // 2×2 face grid: cells 14×14 with 2px gap, top-left at (24,24)
-      const cells =
-        `<rect x="24" y="24" width="14" height="14" rx="2" fill="${c[0]}"/>` +
-        `<rect x="40" y="24" width="14" height="14" rx="2" fill="${c[1]}"/>` +
-        `<rect x="24" y="40" width="14" height="14" rx="2" fill="${c[2]}"/>` +
-        `<rect x="40" y="40" width="14" height="14" rx="2" fill="${c[3]}"/>`;
+      // Animated face group: squares + border strips rotate as a unit
+      const faceGroup =
+        `<g>` +
+        `<animateTransform attributeName="transform" type="rotate"` +
+        ` values="${aVals}" keyTimes="0;0.30;0.65;0.92;1"` +
+        ` dur="3.2s" repeatCount="indefinite"` +
+        ` calcMode="spline" keySplines="0 0 1 1;0.42 0 0.58 1;0 0 1 1;0 0 1 1"/>` +
+        edgeStrips +
+        `<rect x="72"  y="72"  width="42" height="42" rx="4" fill="${c[0]}"/>` +
+        `<rect x="120" y="72"  width="42" height="42" rx="4" fill="${c[1]}"/>` +
+        `<rect x="72"  y="120" width="42" height="42" rx="4" fill="${c[2]}"/>` +
+        `<rect x="120" y="120" width="42" height="42" rx="4" fill="${c[3]}"/>` +
+        `</g>`;
 
       const border =
-        `<rect x="22" y="22" width="35" height="35" rx="3" fill="none" ` +
-        `stroke="${arrowColor}" stroke-width="1.5" opacity="0.4"/>`;
+        `<rect x="72" y="72" width="90" height="90" rx="3" fill="none" ` +
+        `stroke="${aw}" stroke-width="1" opacity="0.15"/>`;
 
-      // Arrow: circle radius 28, center (39,39)
-      // CW:   270° CW  arc top→right→bottom→left (11,39), head points up
-      // CCW:  270° CCW arc top→left→bottom→right (67,39), head points up
-      // Half: 180° CW  arc top→right→bottom      (39,67), head points left
+      // Mini Front Side icon — upper-right corner (safe from all arrow paths)
+      const mx = 191, my = 19, mc = 16, mg = 3;
+      const fc = [8, 9, 10, 11].map(i => COLOR_CSS[faceletColors[i]]);
+      const frontMini =
+        `<rect x="185" y="6" width="46" height="52" rx="4" fill="rgba(0,0,0,0.4)"/>` +
+        `<text x="208" y="16" font-size="7" fill="rgba(255,255,255,0.6)" text-anchor="middle" font-family="sans-serif" font-weight="bold" letter-spacing="0.5">FRONT</text>` +
+        `<rect x="${mx}"       y="${my}"       width="${mc}" height="${mc}" rx="2" fill="${fc[0]}"/>` +
+        `<rect x="${mx+mc+mg}" y="${my}"       width="${mc}" height="${mc}" rx="2" fill="${fc[1]}"/>` +
+        `<rect x="${mx}"       y="${my+mc+mg}" width="${mc}" height="${mc}" rx="2" fill="${fc[2]}"/>` +
+        `<rect x="${mx+mc+mg}" y="${my+mc+mg}" width="${mc}" height="${mc}" rx="2" fill="${fc[3]}"/>` +
+        `<circle cx="${mx+5}" cy="${my+5}" r="3" fill="rgba(0,0,0,0.45)"/>`;
+
+      // Direction arc + arrowhead (dimmed — animation already conveys direction)
       let arrow;
       if (power === 0) {
         arrow =
-          `<path d="M 39 11 A 28 28 0 1 1 11 39" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
-          `<polygon points="11,32 7,40 15,40" fill="${arrowColor}"/>`;
+          `<path d="M 117 33 A 84 84 0 1 1 33 117" fill="none" stroke="${aw}" stroke-width="6" stroke-linecap="round" opacity="0.4"/>` +
+          `<polygon points="33,96 21,120 45,120" fill="${aw}" opacity="0.4"/>`;
       } else if (power === 2) {
         arrow =
-          `<path d="M 39 11 A 28 28 0 1 0 67 39" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
-          `<polygon points="67,32 63,40 71,40" fill="${arrowColor}"/>`;
+          `<path d="M 117 33 A 84 84 0 1 0 201 117" fill="none" stroke="${aw}" stroke-width="6" stroke-linecap="round" opacity="0.4"/>` +
+          `<polygon points="201,96 189,120 213,120" fill="${aw}" opacity="0.4"/>`;
       } else {
         arrow =
-          `<path d="M 39 11 A 28 28 0 0 1 39 67" fill="none" stroke="${arrowColor}" stroke-width="3" stroke-linecap="round"/>` +
-          `<polygon points="31,67 39,63 39,71" fill="${arrowColor}"/>`;
+          `<path d="M 117 33 A 84 84 0 0 1 117 201" fill="none" stroke="${aw}" stroke-width="6" stroke-linecap="round" opacity="0.4"/>` +
+          `<polygon points="93,201 117,189 117,213" fill="${aw}" opacity="0.4"/>`;
       }
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 78 78');
-      svg.setAttribute('width', '52');
-      svg.setAttribute('height', '52');
+      svg.setAttribute('viewBox', '0 0 234 234');
       svg.setAttribute('aria-hidden', 'true');
-      svg.innerHTML = cells + border + arrow;
+      svg.innerHTML = faceGroup + border + frontMini + arrow;
       return svg;
     }
 
     function renderSolution(moves) {
-      totalSteps  = moves.length;
-      currentStep = 0;
+      solutionMoves = moves;
+      totalSteps    = moves.length;
 
-      document.getElementById('move-count').textContent =
-        moves.length === 0
-          ? 'Cube is already solved!'
-          : `Optimal solution: ${moves.length} move${moves.length === 1 ? '' : 's'}`;
-
-      // Snapshot the facelets state before each move (plus final solved state)
       const { cp: cp0, co: co0 } = faceletsToCubie(facelets);
-      const snapshots = [];
+      snapshots = [];
       let curCp = cp0.slice(), curCo = co0.slice();
       for (let i = 0; i < moves.length; i++) {
         snapshots.push(cubieToFacelets(curCp, curCo));
         const res = applyMove(curCp, curCo, MOVES[moves[i]].cp, MOVES[moves[i]].co);
-        curCp = res.cp;
-        curCo = res.co;
+        curCp = res.cp; curCo = res.co;
       }
-      snapshots.push(cubieToFacelets(curCp, curCo)); // solved state (unused but available)
 
-      // Build step cards
-      const list = document.getElementById('move-list');
-      list.innerHTML = '';
-      moves.forEach((m, i) => {
-        const li = document.createElement('li');
-        li.dataset.step = i;
+      appMode = 'solution';
 
-        const num = document.createElement('span');
-        num.className = 'step-num';
-        num.textContent = i + 1;
-
-        const netSvg = createMiniNet(snapshots[i]);
-        netSvg.classList.add('mini-net');
-
-        const arrowSvg = createMoveSVG(m, snapshots[i]);
-        arrowSvg.classList.add('move-arrow');
-
-        const desc = document.createElement('span');
-        desc.className = 'move-desc';
-        desc.textContent = MOVE_DESCS[m];
-
-        li.appendChild(num);
-        li.appendChild(netSvg);
-        li.appendChild(arrowSvg);
-        li.appendChild(desc);
-        list.appendChild(li);
+      // Hide all face-input sections, show the solution display
+      [...FACE_ORDER, 'SOL'].forEach(f => {
+        document.getElementById(`face-section-${f}`).classList.remove('active');
       });
+      document.getElementById('face-section-SOL').classList.add('active');
 
-      // Reveal section and update nav
-      document.getElementById('solution-section').hidden = false;
-      highlightStep(0);
+      if (moves.length === 0) {
+        document.getElementById('instructions').innerHTML = '<strong>Your cube is already solved!</strong>';
+        document.getElementById('face-indicator').textContent = 'Solved!';
+        document.getElementById('btn-face-prev').disabled = true;
+        document.getElementById('btn-face-next').disabled = true;
+      } else {
+        document.getElementById('instructions').innerHTML =
+          `Solved in <strong>${moves.length} move${moves.length === 1 ? '' : 's'}</strong>. Follow the steps below:`;
+        highlightStep(0);
+      }
     }
 
-    // -------------------------------------------------------------------------
-    // K2: Step navigation — Prev/Next buttons highlight current move in list
-    // -------------------------------------------------------------------------
     function highlightStep(step) {
       currentStep = step;
+      const m    = solutionMoves[step];
+      const face = Math.floor(m / 3);
 
-      document.querySelectorAll('#move-list li').forEach(li => {
-        li.classList.toggle('current-step', parseInt(li.dataset.step) === step);
-      });
+      document.getElementById('step-face-name').textContent = FACE_NAMES[face];
 
-      const indicator = document.getElementById('step-indicator');
-      indicator.textContent = totalSteps === 0 ? '' : `Step ${step + 1} of ${totalSteps}`;
+      const visual = document.getElementById('step-visual');
+      visual.innerHTML = '';
+      visual.appendChild(createStepSVG(m, snapshots[step]));
 
-      document.getElementById('btn-prev').disabled = step <= 0;
-      document.getElementById('btn-next').disabled = step >= totalSteps - 1;
+      document.getElementById('step-instruction').textContent = MOVE_DESCS[m];
+      document.getElementById('face-indicator').textContent   = `Step ${step + 1} of ${totalSteps}`;
+
+      document.getElementById('btn-face-prev').disabled = step <= 0;
+      const nextBtn = document.getElementById('btn-face-next');
+      nextBtn.classList.remove('solve-mode');
+      nextBtn.disabled = step >= totalSteps - 1;
+      nextBtn.textContent = step >= totalSteps - 1 ? 'Done' : 'Next \u2192';
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
@@ -1362,48 +1467,69 @@
       if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
     });
 
-    // -------------------------------------------------------------------------
-    // L1: Keyboard color selection — press W/R/G/Y/O/B to pick a color.
-    //     If a facelet is focused, also paint it and advance focus to the next.
-    // -------------------------------------------------------------------------
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      const colorMap = { w: 0, r: 1, g: 2, y: 3, o: 4, b: 5 };
-      const key = e.key.toLowerCase();
-      if (!(key in colorMap)) return;
-      activeColor = colorMap[key];
-      document.querySelectorAll('.color-btn').forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.dataset.color) === activeColor);
-      });
+    // =========================================================================
+    // RESET
+    // =========================================================================
 
-      // If a facelet is focused, paint it and move to the next one (N2)
-      const focused = document.activeElement;
-      if (focused && focused.classList.contains('facelet')) {
-        const idx = parseInt(focused.dataset.index);
-        facelets[idx] = activeColor;
-        focused.style.background = COLOR_CSS[activeColor];
-        focused.style.borderColor = COLOR_CSS[activeColor];
-        updateCounts();
-
-        const allFacelets = [...document.querySelectorAll('.facelet')];
-        const pos = allFacelets.indexOf(focused);
-        allFacelets[(pos + 1) % allFacelets.length].focus();
-        e.preventDefault();
-      }
-    });
-
-    // -------------------------------------------------------------------------
-    // L2: Reset button — clear all facelets and hide solution
-    // -------------------------------------------------------------------------
     document.getElementById('reset-btn').addEventListener('click', () => {
       facelets.fill(-1);
+      facelets[LOGO_FACELET] = 0;
       document.querySelectorAll('.facelet').forEach(cell => {
-        cell.style.background = '';
+        const idx = parseInt(cell.dataset.index);
+        if (idx === LOGO_FACELET) return;
+        cell.style.background  = '';
         cell.style.borderColor = '';
       });
       document.getElementById('solution-section').hidden = true;
       setStatus('');
+      appMode = 'input';
+      showFace(0);
       updateCounts();
+    });
+
+    // =========================================================================
+    // SWIPE GESTURES
+    // =========================================================================
+
+    function attachSwipe(el, onLeft, onRight) {
+      let startX = 0;
+      el.addEventListener('touchstart', e => {
+        startX = e.changedTouches[0].clientX;
+      }, { passive: true });
+      el.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) < 50) return;
+        if (dx < 0) onLeft(); else onRight();
+      }, { passive: true });
+    }
+
+    // =========================================================================
+    // BOOT
+    // =========================================================================
+
+    window.addEventListener('load', () => {
+      initSolver();
+      initLogoFacelet();
+      showFace(0);
+
+      attachSwipe(
+        document.getElementById('cube-net'),
+        () => {
+          if (appMode === 'solution') {
+            if (currentStep < totalSteps - 1) highlightStep(currentStep + 1);
+          } else {
+            if (currentFaceIdx < 5) showFace(currentFaceIdx + 1); else triggerSolve();
+          }
+        },
+        () => {
+          if (appMode === 'solution') {
+            if (currentStep > 0) highlightStep(currentStep - 1);
+          } else {
+            if (currentFaceIdx > 0) showFace(currentFaceIdx - 1);
+          }
+        }
+      );
+
     });
 
   </script>

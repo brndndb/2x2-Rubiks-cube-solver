@@ -78,7 +78,7 @@
       font-size: 0.78rem;
       font-weight: 700;
       letter-spacing: 0.1em;
-      color: #8888aa;
+      color: #ffffff;
       text-transform: uppercase;
     }
 
@@ -507,6 +507,24 @@
       from { box-shadow: 0 0 0 0   rgba(255,255,255,0.6); }
       to   { box-shadow: 0 0 0 5px rgba(255,255,255,0.0); }
     }
+
+    #long-press-hint {
+      font-size: 0.72rem;
+      color: #ffffff;
+      letter-spacing: 0.06em;
+      text-align: center;
+      margin-top: -8px;
+    }
+
+    @keyframes ctx-pulse {
+      0%   { transform: scale(0.75); box-shadow: 0 0 0 0 rgba(255,255,255,0.0); opacity: 0.6; }
+      45%  { transform: scale(1.18); box-shadow: 0 0 7px 4px rgba(255,255,255,0.55); opacity: 1; }
+      100% { transform: scale(1);    box-shadow: 0 0 3px 1px rgba(255,255,255,0.12); opacity: 1; }
+    }
+
+    .ctx-cell.ctx-new {
+      animation: ctx-pulse 0.55s cubic-bezier(0.22,0.61,0.36,1) 3 forwards;
+    }
   </style>
 </head>
 <body>
@@ -515,6 +533,7 @@
   <h1>FPLES Cube Solver</h1>
 
   <div id="instructions"></div>
+  <div id="long-press-hint">Long-press square to select color</div>
 
   <!-- Faces stacked vertically: Front, Right, Back, Left, Top, Bottom -->
   <div id="cube-net">
@@ -924,10 +943,10 @@
     const COLOR_CSS   = ['#ffffff', '#c41e3a', '#009b48', '#ffd500', '#ff5800', '#0051a2'];
     const COLOR_NAMES = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
 
-    // Face colors in the new orientation:
-    //   White logo on Front (F), Red on Top (U), Blue on Left (L)
-    //   → Green on Right (R), Orange on Bottom (D), Yellow on Back (B)
-    const U_COL = 1, R_COL = 2, F_COL = 0, D_COL = 4, L_COL = 5, B_COL = 3;
+    // Face colors in the physical orientation:
+    //   White logo on Front (F), Orange on Right (R), Yellow on Back (B)
+    //   Red on Left (L), Green on Top (U), Blue on Bottom (D)
+    const U_COL = 2, R_COL = 4, F_COL = 0, D_COL = 5, L_COL = 1, B_COL = 3;
 
     // Facelet indices for each corner position (physical layout — unchanged)
     const CORNER_FACELETS = [
@@ -1400,12 +1419,24 @@
     const U_CTX = { t:[21,20], b:[8,9],   l:[16,17], r:[5,4]    };
     const D_CTX = { t:[10,11], b:[23,22], l:[19,18], r:[6,7]    };
 
+    const ctxColorCache = {};
+    let ctxPulseTimer = null;
+
     function updateContextBorders() {
       const set = (id, fi) => {
         const el = document.getElementById(id);
         if (!el) return;
         const col = facelets[fi];
+        if (ctxColorCache[id] === col) return;
+        ctxColorCache[id] = col;
         el.style.background = col === -1 ? '' : COLOR_CSS[col];
+        if (col !== -1) {
+          el.classList.remove('ctx-new');
+          void el.offsetWidth;
+          el.classList.add('ctx-new');
+        } else {
+          el.classList.remove('ctx-new');
+        }
       };
       for (const [face, ctx] of [['F',F_CTX],['R',R_CTX],['B',B_CTX],['L',L_CTX],['U',U_CTX],['D',D_CTX]]) {
         set(`ctx-${face}-t0`, ctx.t[0]); set(`ctx-${face}-t1`, ctx.t[1]);
@@ -1456,7 +1487,7 @@
                'Please check your color entry and try again.';
       if (co[1] !== 0)
         return 'The front top left corner looks twisted. ' +
-               'Make sure white faces front, red faces top, and blue faces left.';
+               'Make sure white faces front, green faces top, and red faces left.';
 
       if (co.reduce((a, b) => a + b, 0) % 3 !== 0)
         return 'Invalid corner orientation — one or more corners may be incorrectly entered.';
@@ -1531,6 +1562,16 @@
         nextBtn.classList.remove('solve-mode');
         nextBtn.disabled = false;
       }
+      // Re-pulse ctx strips on the incoming face after the slide animation settles
+      clearTimeout(ctxPulseTimer);
+      const faceKey = FACE_ORDER[idx];
+      ctxPulseTimer = setTimeout(() => {
+        [`ctx-${faceKey}-t0`,`ctx-${faceKey}-t1`,
+         `ctx-${faceKey}-b0`,`ctx-${faceKey}-b1`,
+         `ctx-${faceKey}-l0`,`ctx-${faceKey}-l1`,
+         `ctx-${faceKey}-r0`,`ctx-${faceKey}-r1`].forEach(id => delete ctxColorCache[id]);
+        updateContextBorders();
+      }, 380);
     }
 
     function showFace(idx) { activateFace(idx); }
@@ -1538,26 +1579,26 @@
     function animateFaceTransition(fromIdx, toIdx, dur) {
       // Two-step: L→U goes via Front (Front from right, then Front exits down to Top)
       if (fromIdx === 3 && toIdx === 4) {
-        animateFaceTransition(3, 0, 360);
-        setTimeout(() => animateFaceTransition(0, 4, 360), 420);
+        animateFaceTransition(3, 0, 700);
+        setTimeout(() => animateFaceTransition(0, 4, 700), 420);
         return;
       }
       // Two-step: U→L goes via Front (Top exits up to Front, then Front exits right to Left)
       if (fromIdx === 4 && toIdx === 3) {
-        animateFaceTransition(4, 0, 360);
-        setTimeout(() => animateFaceTransition(0, 3, 360), 420);
+        animateFaceTransition(4, 0, 700);
+        setTimeout(() => animateFaceTransition(0, 3, 700), 420);
         return;
       }
       // Two-step: U→D goes via Front (Top exits up to Front, then Front exits up to Bottom)
       if (fromIdx === 4 && toIdx === 5) {
-        animateFaceTransition(4, 0, 360);
-        setTimeout(() => animateFaceTransition(0, 5, 360), 420);
+        animateFaceTransition(4, 0, 700);
+        setTimeout(() => animateFaceTransition(0, 5, 700), 420);
         return;
       }
       // Two-step: D→U goes via Front (Bottom exits down to Front, then Front exits down to Top)
       if (fromIdx === 5 && toIdx === 4) {
-        animateFaceTransition(5, 0, 360);
-        setTimeout(() => animateFaceTransition(0, 4, 360), 420);
+        animateFaceTransition(5, 0, 700);
+        setTimeout(() => animateFaceTransition(0, 4, 700), 420);
         return;
       }
 
@@ -1655,28 +1696,7 @@
       });
     }
 
-    function showFace(idx) {
-      currentFaceIdx = idx;
-      FACE_ORDER.forEach(f => {
-        document.getElementById(`face-section-${f}`).classList.remove('active');
-      });
-      document.getElementById(`face-section-${FACE_ORDER[idx]}`).classList.add('active');
-      document.getElementById('face-indicator').textContent =
-        `Face ${idx + 1} of 6 \u2014 ${FACE_LABELS[idx]}`;
-      document.getElementById('instructions').innerHTML = FACE_INSTRUCTIONS[idx];
-      document.getElementById('btn-face-prev').disabled = idx === 0;
-      const nextBtn = document.getElementById('btn-face-next');
-      if (idx === 5) {
-        nextBtn.textContent = 'Solve';
-        nextBtn.classList.add('solve-mode');
-        updateSolveButton();
-      } else {
-        nextBtn.textContent = 'Next \u2192';
-        nextBtn.classList.remove('solve-mode');
-        nextBtn.disabled = false;
-      }
-    }
-
+    function showFace(idx) { activateFace(idx); }
     document.getElementById('btn-face-prev').addEventListener('click', () => {
       if (appMode === 'solution') {
         if (currentStep > 0) highlightStep(currentStep - 1);
@@ -1829,6 +1849,7 @@
 
       appMode = 'solution';
       document.getElementById('reset-btn').style.display = 'none';
+      document.getElementById('long-press-hint').style.display = 'none';
 
       // Hide all face-input sections, show the solution display
       [...FACE_ORDER, 'SOL'].forEach(f => {
@@ -1970,8 +1991,10 @@
       document.getElementById('face-section-SOL').getAnimations().forEach(a => a.cancel());
       document.getElementById('solved-prompt').hidden = true;
       document.getElementById('reset-btn').style.display = '';
+      document.getElementById('long-press-hint').style.display = '';
       facelets.fill(-1);
       facelets[LOGO_FACELET] = 0;
+      Object.keys(ctxColorCache).forEach(k => delete ctxColorCache[k]);
       document.querySelectorAll('.facelet').forEach(cell => {
         const idx = parseInt(cell.dataset.index);
         if (idx === LOGO_FACELET) return;

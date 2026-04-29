@@ -375,6 +375,54 @@
       gap: 14px;
     }
 
+    #solved-prompt {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 4px 0;
+    }
+
+    #solved-prompt[hidden] { display: none; }
+
+    #solved-text {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #ffd700;
+      text-shadow: 0 0 14px rgba(255,215,0,0.55);
+    }
+
+    #solved-no, #solved-yes {
+      padding: 12px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      color: #fff;
+    }
+
+    #solved-no {
+      background: #c41e3a;
+      animation: pulse-no 1.2s ease-in-out infinite;
+    }
+
+    #solved-yes {
+      background: #009b48;
+      animation: pulse-yes 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-no {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(196,30,58,0.0);  }
+      50%       { transform: scale(1.10); box-shadow: 0 0 0 8px rgba(196,30,58,0.35); }
+    }
+
+    @keyframes pulse-yes {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(0,155,72,0.0);  }
+      50%       { transform: scale(1.10); box-shadow: 0 0 0 8px rgba(0,155,72,0.40); }
+    }
+
     #face-nav {
       display: flex;
       align-items: center;
@@ -444,15 +492,15 @@
       position: absolute;
       left: 0;
       top: 0;
-      width: 52px;
-      height: 52px;
+      width: 72px;
+      height: 72px;
       border-radius: 50%;
       border: 2px solid rgba(255,255,255,0.2);
       will-change: transform, opacity;
     }
 
     .facelet.lp-pending {
-      animation: lp-ring 380ms ease-out forwards;
+      animation: lp-ring 200ms ease-out forwards;
     }
 
     @keyframes lp-ring {
@@ -640,10 +688,15 @@
     </div>
 
     <div class="face-section" id="face-section-SOL">
-      <div id="step-prefix">With the front facing you, rotate the:</div>
+      <div id="step-prefix">With the front facing you, rotate to the:</div>
       <div id="step-face-name"></div>
       <div id="step-visual"></div>
       <div id="step-instruction"></div>
+      <div id="solved-prompt" hidden>
+        <button id="solved-no">No</button>
+        <span id="solved-text">SOLVED?</span>
+        <button id="solved-yes">Yes</button>
+      </div>
     </div>
 
   </div>
@@ -678,7 +731,7 @@
     </div>
 
     <div id="step-display">
-      <div id="step-prefix">With the front facing you, rotate the:</div>
+      <div id="step-prefix">With the front facing you, rotate to the:</div>
       <div id="step-face-name"></div>
       <div id="step-visual"></div>
       <div id="step-instruction"></div>
@@ -1160,9 +1213,9 @@
     // DRUM PICKER — long-press to open; drag to scroll; release to commit
     // =========================================================================
 
-    const DRUM_STEP     = 58;
+    const DRUM_STEP     = 78;
     const DRUM_SLOTS    = 2;
-    const LONG_PRESS_MS = 380;
+    const LONG_PRESS_MS = 200;
 
     const drumOverlay = document.getElementById('color-drum-overlay');
     const drumStrip   = document.getElementById('color-drum-strip');
@@ -1775,6 +1828,7 @@
       }
 
       appMode = 'solution';
+      document.getElementById('reset-btn').style.display = 'none';
 
       // Hide all face-input sections, show the solution display
       [...FACE_ORDER, 'SOL'].forEach(f => {
@@ -1813,6 +1867,7 @@
       nextBtn.classList.remove('solve-mode');
       nextBtn.disabled = false;
       nextBtn.textContent = step >= totalSteps - 1 ? 'Done \u2728' : 'Next \u2192';
+      document.getElementById('solved-prompt').hidden = step < totalSteps - 1;
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
@@ -1913,6 +1968,8 @@
       document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
       // Cancel spin/explode animation held on the solution section
       document.getElementById('face-section-SOL').getAnimations().forEach(a => a.cancel());
+      document.getElementById('solved-prompt').hidden = true;
+      document.getElementById('reset-btn').style.display = '';
       facelets.fill(-1);
       facelets[LOGO_FACELET] = 0;
       document.querySelectorAll('.facelet').forEach(cell => {
@@ -1926,6 +1983,14 @@
       appMode = 'input';
       showFace(0);
       updateCounts();
+    });
+
+    document.getElementById('solved-yes').addEventListener('click', () => {
+      launchConfetti();
+    });
+
+    document.getElementById('solved-no').addEventListener('click', () => {
+      document.getElementById('reset-btn').click();
     });
 
     // =========================================================================

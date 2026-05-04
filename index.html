@@ -2275,24 +2275,6 @@
       closeScanModal();
     }
 
-    // Preview cell tap: cycle through colors
-    document.querySelectorAll('.sp-cell').forEach(cell => {
-      cell.addEventListener('click', () => {
-        if (cell.classList.contains('sp-locked')) return;
-        const slot = parseInt(cell.dataset.slot);
-        detectedColors[slot] = (detectedColors[slot] + 1) % 6;
-        cell.style.background = COLOR_CSS[detectedColors[slot]];
-      });
-    });
-
-    document.getElementById('scan-close').addEventListener('click', closeScanModal);
-    document.getElementById('scan-backdrop').addEventListener('click', closeScanModal);
-    document.getElementById('scan-capture-btn').addEventListener('click', captureAndClassify);
-    document.getElementById('scan-apply-btn').addEventListener('click', applyScanToFace);
-    document.getElementById('scan-face-btn').addEventListener('click', () => {
-      openScanModal(currentFaceIdx);
-    });
-
     // =========================================================================
     // BOOT
     // =========================================================================
@@ -2301,6 +2283,23 @@
       initSolver();
       initLogoFacelet();
       showFace(0);
+
+      // Camera scan event listeners (modal HTML is after the script tag, so must be deferred to load)
+      document.querySelectorAll('.sp-cell').forEach(cell => {
+        cell.addEventListener('click', () => {
+          if (cell.classList.contains('sp-locked')) return;
+          const slot = parseInt(cell.dataset.slot);
+          detectedColors[slot] = (detectedColors[slot] + 1) % 6;
+          cell.style.background = COLOR_CSS[detectedColors[slot]];
+        });
+      });
+      document.getElementById('scan-close').addEventListener('click', closeScanModal);
+      document.getElementById('scan-backdrop').addEventListener('click', closeScanModal);
+      document.getElementById('scan-capture-btn').addEventListener('click', captureAndClassify);
+      document.getElementById('scan-apply-btn').addEventListener('click', applyScanToFace);
+      document.getElementById('scan-face-btn').addEventListener('click', () => {
+        openScanModal(currentFaceIdx);
+      });
 
       attachSwipe(
         document.getElementById('cube-net'),

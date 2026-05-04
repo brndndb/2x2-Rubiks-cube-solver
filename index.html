@@ -507,6 +507,99 @@
       from { box-shadow: 0 0 0 0   rgba(255,255,255,0.6); }
       to   { box-shadow: 0 0 0 5px rgba(255,255,255,0.0); }
     }
+
+    /* ========== SCAN BUTTON (in face-nav) ========== */
+    #scan-face-btn {
+      padding: 10px 18px; font-size: 0.95rem; font-weight: 600;
+      border: none; border-radius: 8px;
+      background: #2e2e4a; color: #90caf9;
+      cursor: pointer; transition: background 0.15s;
+      display: none;
+    }
+    #scan-face-btn:hover { background: #3e3e6a; }
+
+    /* ========== SCAN MODAL ========== */
+    #scan-modal {
+      position: fixed; inset: 0;
+      z-index: 2000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #scan-modal[hidden] { display: none; }
+
+    #scan-backdrop {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.80);
+    }
+
+    #scan-panel {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      background: #1a1a2e;
+      border: 1px solid #2e2e5a; border-radius: 14px;
+      padding: 16px;
+      width: min(360px, 96vw);
+      max-height: 96vh; overflow-y: auto;
+    }
+
+    #scan-header {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%;
+    }
+    #scan-face-label { font-weight: 700; color: #90caf9; font-size: 1rem; }
+    #scan-close {
+      background: none; border: none; color: #aaa;
+      font-size: 1.3rem; cursor: pointer; padding: 2px 8px; line-height: 1;
+    }
+    #scan-close:hover { color: #fff; }
+
+    #scan-viewport {
+      position: relative; width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #000; border-radius: 8px; overflow: hidden;
+    }
+    #scan-video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    #scan-overlay {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; pointer-events: none;
+    }
+
+    #scan-hint {
+      font-size: 0.85rem; color: #aaaacc; text-align: center;
+      max-width: 300px;
+    }
+
+    #scan-preview { width: 100%; }
+    #scan-preview[hidden] { display: none; }
+    #scan-preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      width: 120px; height: 120px;
+      margin: 0 auto 8px;
+    }
+    .sp-cell {
+      border-radius: 6px;
+      border: 2px solid #555580;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .sp-cell:hover { transform: scale(1.08); }
+    .sp-cell.sp-locked { cursor: not-allowed; opacity: 0.65; }
+    #scan-preview-note { font-size: 0.8rem; color: #8888aa; text-align: center; }
+
+    #scan-btn-row { display: flex; gap: 12px; }
+    #scan-capture-btn, #scan-apply-btn {
+      padding: 12px 28px; font-size: 1rem; font-weight: 700;
+      border: none; border-radius: 8px; cursor: pointer;
+    }
+    #scan-capture-btn { background: #4a90e2; color: #fff; }
+    #scan-capture-btn:hover { background: #357abd; }
+    #scan-apply-btn { background: #009b48; color: #fff; }
+    #scan-apply-btn:hover { background: #007a38; }
+    #scan-apply-btn[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -704,6 +797,7 @@
   <div id="face-nav">
     <button id="btn-face-prev" disabled>&#8592; Back</button>
     <span id="face-indicator">Face 1 of 6 — Front Side</span>
+    <button id="scan-face-btn">&#128247; Scan</button>
     <button id="btn-face-next">Next &#8594;</button>
   </div>
 
@@ -1531,6 +1625,7 @@
         nextBtn.classList.remove('solve-mode');
         nextBtn.disabled = false;
       }
+      document.getElementById('scan-face-btn').style.display = 'inline-block';
     }
 
     function showFace(idx) { activateFace(idx); }
@@ -1675,6 +1770,7 @@
         nextBtn.classList.remove('solve-mode');
         nextBtn.disabled = false;
       }
+      document.getElementById('scan-face-btn').style.display = 'inline-block';
     }
 
     document.getElementById('btn-face-prev').addEventListener('click', () => {
@@ -1829,6 +1925,7 @@
 
       appMode = 'solution';
       document.getElementById('reset-btn').style.display = 'none';
+      document.getElementById('scan-face-btn').style.display = 'none';
 
       // Hide all face-input sections, show the solution display
       [...FACE_ORDER, 'SOL'].forEach(f => {
@@ -1964,6 +2061,7 @@
     // =========================================================================
 
     document.getElementById('reset-btn').addEventListener('click', () => {
+      closeScanModal();
       // Clear any in-flight confetti pieces
       document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
       // Cancel spin/explode animation held on the solution section
@@ -2010,6 +2108,192 @@
     }
 
     // =========================================================================
+    // CAMERA SCAN — COLOR CLASSIFICATION
+    // =========================================================================
+
+    // Maps face index (F=0,R=1,B=2,L=3,U=4,D=5) → facelet indices in TL,TR,BL,BR order
+    const FACE_FACELET_MAP = [
+      [ 8,  9, 10, 11],  // F
+      [ 4,  5,  6,  7],  // R
+      [20, 21, 22, 23],  // B
+      [16, 17, 18, 19],  // L
+      [ 0,  1,  2,  3],  // U
+      [12, 13, 14, 15],  // D
+    ];
+
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const l = (max + min) / 2;
+      if (max === min) return [0, 0, l];
+      const d = max - min;
+      const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      let h;
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+        case g: h = ((b - r) / d + 2) / 6; break;
+        default: h = ((r - g) / d + 4) / 6;
+      }
+      return [h * 360, s, l];
+    }
+
+    const HUE_CENTERS = [0, 5, 135, 55, 28, 225]; // dummy,Red,Green,Yellow,Orange,Blue
+    function classifyByHueDistance(h, s, l) {
+      if (l > 0.65) return 0;
+      let best = 1, bestDist = Infinity;
+      for (let c = 1; c < 6; c++) {
+        let d = Math.abs(h - HUE_CENTERS[c]);
+        if (d > 180) d = 360 - d;
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      return best;
+    }
+
+    function classifyHsl(h, s, l) {
+      if (l > 0.72 && s < 0.22) return 0;                        // White
+      if (h >= 44 && h <= 68 && s > 0.50 && l > 0.38) return 3; // Yellow
+      if (h > 15  && h <= 43 && s > 0.55 && l > 0.35) return 4; // Orange
+      if ((h <= 15 || h >= 345) && s > 0.45 && l < 0.68) return 1; // Red
+      if (h >= 95  && h <= 165 && s > 0.30) return 2;            // Green
+      if (h >= 195 && h <= 260 && s > 0.30) return 5;            // Blue
+      return classifyByHueDistance(h, s, l);
+    }
+
+    function sampleCell(ctx, canvasW, canvasH, slot) {
+      const gridX = canvasW * 0.25, gridY = canvasH * 0.25;
+      const cellW = canvasW * 0.25, cellH = canvasH * 0.25;
+      const col = slot % 2, row = Math.floor(slot / 2);
+      const margin = 0.28;
+      const sx = Math.round(gridX + col * cellW + cellW * margin);
+      const sy = Math.round(gridY + row * cellH + cellH * margin);
+      const sw = Math.max(1, Math.round(cellW * (1 - 2 * margin)));
+      const sh = Math.max(1, Math.round(cellH * (1 - 2 * margin)));
+      const data = ctx.getImageData(sx, sy, sw, sh).data;
+      let rSum = 0, gSum = 0, bSum = 0;
+      const pixCount = sw * sh;
+      for (let i = 0; i < data.length; i += 4) {
+        rSum += data[i]; gSum += data[i + 1]; bSum += data[i + 2];
+      }
+      return [rSum / pixCount, gSum / pixCount, bSum / pixCount];
+    }
+
+    // =========================================================================
+    // CAMERA SCAN — MODAL LOGIC
+    // =========================================================================
+
+    let cameraStream   = null;
+    let scanFaceIdx    = null;
+    let detectedColors = [-1, -1, -1, -1];
+
+    function openScanModal(faceIdx) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('Camera not supported in this browser.', true);
+        return;
+      }
+      scanFaceIdx = faceIdx;
+      document.getElementById('scan-face-label').textContent =
+        'Scanning: ' + FACE_LABELS[faceIdx];
+      document.getElementById('scan-preview').hidden = true;
+      document.getElementById('scan-apply-btn').hidden = true;
+      document.getElementById('scan-hint').textContent =
+        'Align the face inside the grid, then tap Capture.';
+      detectedColors = [-1, -1, -1, -1];
+      document.getElementById('scan-modal').hidden = false;
+      startCamera();
+    }
+
+    async function startCamera() {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+        });
+        document.getElementById('scan-video').srcObject = cameraStream;
+      } catch (err) {
+        document.getElementById('scan-hint').textContent =
+          'Camera error: ' + (err.message || String(err));
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+      const v = document.getElementById('scan-video');
+      if (v) v.srcObject = null;
+    }
+
+    function closeScanModal() {
+      stopCamera();
+      document.getElementById('scan-modal').hidden = true;
+      detectedColors = [-1, -1, -1, -1];
+    }
+
+    function captureAndClassify() {
+      const video  = document.getElementById('scan-video');
+      const canvas = document.getElementById('scan-canvas');
+      canvas.width  = video.videoWidth  || 640;
+      canvas.height = video.videoHeight || 640;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      for (let slot = 0; slot < 4; slot++) {
+        const [r, g, b] = sampleCell(ctx, canvas.width, canvas.height, slot);
+        const [h, s, l] = rgbToHsl(r, g, b);
+        detectedColors[slot] = classifyHsl(h, s, l);
+      }
+      // Lock logo slot to White for Front face
+      if (scanFaceIdx === 0) detectedColors[0] = 0;
+      showScanPreview();
+    }
+
+    function showScanPreview() {
+      document.getElementById('scan-preview').hidden = false;
+      document.getElementById('scan-apply-btn').hidden = false;
+      document.getElementById('scan-hint').textContent =
+        'Tap a square to correct its color, then tap Apply.';
+      document.querySelectorAll('.sp-cell').forEach((cell, slot) => {
+        const c = detectedColors[slot];
+        cell.style.background = c >= 0 ? COLOR_CSS[c] : '#2e2e4a';
+        // Lock the logo slot on Front face
+        const isLogo = scanFaceIdx === 0 && slot === 0;
+        cell.classList.toggle('sp-locked', isLogo);
+        cell.style.pointerEvents = isLogo ? 'none' : '';
+      });
+    }
+
+    function applyScanToFace() {
+      const faceletIndices = FACE_FACELET_MAP[scanFaceIdx];
+      faceletIndices.forEach((fi, slot) => {
+        if (fi === LOGO_FACELET) return;
+        const c = detectedColors[slot];
+        if (c < 0) return;
+        facelets[fi] = c;
+        const cell = document.querySelector(`[data-index="${fi}"]`);
+        if (cell) cell.style.background = COLOR_CSS[c];
+      });
+      updateCounts();
+      closeScanModal();
+    }
+
+    // Preview cell tap: cycle through colors
+    document.querySelectorAll('.sp-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        if (cell.classList.contains('sp-locked')) return;
+        const slot = parseInt(cell.dataset.slot);
+        detectedColors[slot] = (detectedColors[slot] + 1) % 6;
+        cell.style.background = COLOR_CSS[detectedColors[slot]];
+      });
+    });
+
+    document.getElementById('scan-close').addEventListener('click', closeScanModal);
+    document.getElementById('scan-backdrop').addEventListener('click', closeScanModal);
+    document.getElementById('scan-capture-btn').addEventListener('click', captureAndClassify);
+    document.getElementById('scan-apply-btn').addEventListener('click', applyScanToFace);
+    document.getElementById('scan-face-btn').addEventListener('click', () => {
+      openScanModal(currentFaceIdx);
+    });
+
+    // =========================================================================
     // BOOT
     // =========================================================================
 
@@ -2040,5 +2324,58 @@
     });
 
   </script>
+
+  <!-- ========== CAMERA SCAN MODAL ========== -->
+  <div id="scan-modal" hidden>
+    <div id="scan-backdrop"></div>
+    <div id="scan-panel">
+
+      <div id="scan-header">
+        <span id="scan-face-label">Scanning: Front Side</span>
+        <button id="scan-close">&#10005;</button>
+      </div>
+
+      <div id="scan-viewport">
+        <video id="scan-video" autoplay playsinline muted></video>
+        <svg id="scan-overlay" viewBox="0 0 300 300" preserveAspectRatio="xMidYMid meet">
+          <!-- dimmed surround — cutout over the 2×2 grid area -->
+          <path fill="rgba(0,0,0,0.55)" fill-rule="evenodd"
+                d="M0 0 H300 V300 H0Z M75 75 H225 V225 H75Z"/>
+          <!-- grid border + dividers -->
+          <rect x="75" y="75" width="150" height="150"
+                fill="none" stroke="white" stroke-width="2"/>
+          <line x1="150" y1="75"  x2="150" y2="225" stroke="white" stroke-width="1.5"/>
+          <line x1="75"  y1="150" x2="225" y2="150" stroke="white" stroke-width="1.5"/>
+          <!-- blue corner tick marks -->
+          <g stroke="#4a90e2" stroke-width="3" stroke-linecap="round">
+            <line x1="75"  y1="90"  x2="75"  y2="75"/><line x1="75"  y1="75"  x2="90"  y2="75"/>
+            <line x1="210" y1="75"  x2="225" y2="75"/><line x1="225" y1="75"  x2="225" y2="90"/>
+            <line x1="75"  y1="210" x2="75"  y2="225"/><line x1="75"  y1="225" x2="90"  y2="225"/>
+            <line x1="225" y1="210" x2="225" y2="225"/><line x1="210" y1="225" x2="225" y2="225"/>
+          </g>
+        </svg>
+        <canvas id="scan-canvas" style="display:none"></canvas>
+      </div>
+
+      <p id="scan-hint">Align the face inside the grid, then tap Capture.</p>
+
+      <div id="scan-preview" hidden>
+        <div id="scan-preview-grid">
+          <div class="sp-cell" data-slot="0"></div>
+          <div class="sp-cell" data-slot="1"></div>
+          <div class="sp-cell" data-slot="2"></div>
+          <div class="sp-cell" data-slot="3"></div>
+        </div>
+        <p id="scan-preview-note">Tap a square to change its color.</p>
+      </div>
+
+      <div id="scan-btn-row">
+        <button id="scan-capture-btn">Capture</button>
+        <button id="scan-apply-btn" hidden>Apply to Face</button>
+      </div>
+
+    </div>
+  </div>
+
 </body>
 </html>
